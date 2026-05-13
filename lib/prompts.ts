@@ -140,3 +140,109 @@ ${context}
 ---
 
 Draw from this material when relevant, but feel free to go beyond it to provide deeper context, analogies, or related knowledge. Always prioritize understanding over coverage.`;
+
+// ─── Checkpoint Flashcard task ────────────────────────────────────────────────
+
+import type { QuizDifficultyLevel } from "./types";
+
+export function buildCheckpointFlashcardTask(topicTitles: string[]): string {
+  return `Generate 5–8 targeted flashcards for a checkpoint review.
+The student just completed these reviewer sections: ${topicTitles.map(t => `"${t}"`).join(", ")}.
+Focus ONLY on content from these sections.
+
+Return EXACTLY this JSON structure:
+{ "cards": [ { "front": "...", "back": "...", "hint": "...", "difficulty": "easy|medium|hard", "topic": "..." } ] }
+
+Requirements:
+- 5–8 cards total
+- Target must-memorize facts and quick recall prompts from these sections
+- difficulty mix: ~50% easy, ~50% medium
+- hint: include for medium/hard cards
+- topic: use the section title it came from`;
+}
+
+// ─── Extended Quiz task ───────────────────────────────────────────────────────
+
+const DIFFICULTY_INSTRUCTIONS: Record<QuizDifficultyLevel, string> = {
+  beginner: "Focus on core definitions, basic terminology, and fundamental recall. Keep questions straightforward.",
+  intermediate: "Include application questions, comparisons, and cause-effect relationships.",
+  advanced: "Use multi-step reasoning, clinical application scenarios, and higher-order thinking.",
+  board_exam: "Use exam-style clinical vignettes, high-yield traps, and decision-tree scenarios.",
+  extreme_recall: "Target dense fact recall, precise numerical thresholds, edge cases, and obscure distinctions.",
+};
+
+export function buildQuizTask(opts: { difficultyLevel: QuizDifficultyLevel; weakTopics: string[]; questionCount?: number }): string {
+  const count = opts.questionCount ?? 10;
+  const diffInstruction = DIFFICULTY_INSTRUCTIONS[opts.difficultyLevel];
+  const weakInstruction = opts.weakTopics.length > 0
+    ? `\nPrioritize these topics where the student previously struggled: ${opts.weakTopics.join(", ")}.`
+    : "";
+
+  return `Generate exactly ${count} quiz questions at "${opts.difficultyLevel}" difficulty level.
+${diffInstruction}${weakInstruction}
+
+Mix question types: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank.
+
+Return EXACTLY this JSON structure:
+{
+  "questions": [
+    // multiple_choice:
+    { "type": "multiple_choice", "question": "...", "choices": ["A","B","C","D"], "correctIndex": 0, "explanation": "...", "difficulty": "easy|medium|hard", "topic": "..." },
+    // true_false:
+    { "type": "true_false", "question": "...", "correctAnswer": true, "explanation": "...", "difficulty": "easy|medium|hard", "topic": "..." },
+    // identification:
+    { "type": "identification", "question": "...", "correctAnswer": "...", "acceptableVariants": ["..."], "explanation": "...", "difficulty": "easy|medium|hard", "topic": "..." },
+    // fill_in_the_blank:
+    { "type": "fill_in_the_blank", "question": "...", "template": "The [BLANK] is responsible for...", "correctAnswer": "...", "acceptableVariants": ["..."], "explanation": "...", "difficulty": "easy|medium|hard", "topic": "..." }
+  ],
+  "difficultyLevel": "${opts.difficultyLevel}"
+}
+
+Rules:
+- multiple_choice: always exactly 4 choices, correctIndex 0-3
+- true_false: correctAnswer must be boolean true or false
+- identification: short factual answer (1-5 words), include 2-3 acceptableVariants
+- fill_in_the_blank: template must contain exactly one [BLANK], correctAnswer is what fills it
+- explanation: 1-2 sentences explaining the correct answer
+- difficulty: per-question granular difficulty (easy/medium/hard), not the overall level`;
+}
+
+// ─── Open answer grading task ─────────────────────────────────────────────────
+
+export const OPEN_ANSWER_GRADE_TASK = (
+  question: string,
+  correctAnswer: string,
+  acceptableVariants: string[],
+  userAnswer: string,
+) => `Grade the following student answer. Be generous with phrasing but strict on factual accuracy.
+
+Question: ${question}
+Correct answer: ${correctAnswer}
+Acceptable variants: ${acceptableVariants.join(", ") || "none listed"}
+Student answer: ${userAnswer}
+
+Respond with ONLY this JSON (no other text):
+{ "correct": true, "confidence": "high", "feedback": "Correct: one sentence." }
+or
+{ "correct": false, "confidence": "high", "feedback": "Not quite: one sentence explaining the key point missed." }
+
+Rules:
+- correct: true if the student captures the essential meaning, even with different wording
+- correct: false if factually wrong, not just imprecisely worded
+- confidence: "high" if clear, "medium" if borderline, "low" if ambiguous
+- feedback: always start with "Correct:" or "Not quite:"`;
+
+// ─── Remediation reviewer task ────────────────────────────────────────────────
+
+export const REMEDIATION_REVIEWER_TASK = (weakTopics: string[]) =>
+  `The student failed their quiz. Their weak areas are: ${weakTopics.join(", ")}.
+
+Generate a focused remediation reviewer covering ONLY these weak topics.
+Use the EXACT SAME JSON structure as the full reviewer.
+
+Constraints:
+- topics: 1–4 entries, only the weak topics listed above
+- globalMustMemorize: focus only on facts related to the weak topics
+- mnemonics: focus on the specific weak items
+- Be direct, concise, and exam-focused
+- Do NOT include topics the student already passed`;

@@ -1,0 +1,64 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getCheckpointFlashcards, saveCheckpointFlashcards, getDocument, getProgression, upsertProgression } from "@/lib/store";
+import { generateStructured } from "@/lib/claude";
+import { buildCheckpointFlashcardTask, SYSTEM_PREAMBLE } from "@/lib/prompts";
+import { FlashcardsSchema } from "@/lib/types";
+
+export const runtime = "nodejs";
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { action, documentId, checkpointIndex } = body as { action: string; documentId: string; checkpointIndex: number };
+
+    if (!documentId) return NextResponse.json({ error: "documentId required" }, { status: 400 });
+
+    if (action === "get") {
+      const cards = await getCheckpointFlashcards(documentId, checkpointIndex);
+      return NextResponse.json({ cards });
+    }
+
+    if (action === "generate") {
+      const existing = await getCheckpointFlashcards(documentId, checkpointIndex);
+      if (existing && !body.force) return NextResponse.json({ cards: existing });
+
+      const doc = await getDocument(documentId);
+      if (!doc?.reviewer) return NextResponse.json({ error: "No reviewer found" }, { status: 404 });
+
+      const progression = await getProgression(documentId);
+      const cp = progression?.checkpointStatuses[checkpointIndex];
+      const coveredIndices = cp?.sectionsCovered ?? [];
+      const coveredTopics = coveredIndices
+        .map(i => doc.reviewer!.topics[i])
+        .filter(Boolean);
+
+      const topicTitles = coveredTopics.map(t => t.title);
+      const topicContent = JSON.stringify(coveredTopics);
+      const taskInstruction = buildCheckpointFlashcardTask(topicTitles);
+
+      const { parsed } = await generateStructured({
+        schema: FlashcardsSchema,
+        systemPreamble: SYSTEM_PREAMBLE,
+        documentText: topicContent,
+        taskInstruction,
+        maxTokens: 1500,
+      });
+
+      const cards = parsed.cards;
+      await saveCheckpointFlashcards(documentId, checkpointIndex, cards);
+
+      if (progression) {
+        const cpStatus = progression.checkpointStatuses.find(c => c.checkpointIndex === checkpointIndex);
+        if (cpStatus) cpStatus.flashcardsGenerated = true;
+        await upsertProgression(progression);
+      }
+
+      return NextResponse.json({ cards });
+    }
+
+    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

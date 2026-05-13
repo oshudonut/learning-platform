@@ -405,3 +405,102 @@ export async function getDocumentByContentHash(
   if (!data) return null;
   return fromRow(data as Record<string, unknown>);
 }
+
+// ─── Document Progression ────────────────────────────────────────────────────
+
+export async function getProgression(documentId: string): Promise<import("./types").DocumentProgression | null> {
+  const { data, error } = await supabase
+    .from("document_progressions")
+    .select("*")
+    .eq("document_id", documentId)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") return null; // not found
+    throw error;
+  }
+  return rowToProgression(data);
+}
+
+export async function upsertProgression(progression: import("./types").DocumentProgression): Promise<void> {
+  const { error } = await supabase.from("document_progressions").upsert({
+    document_id: progression.documentId,
+    section_statuses: progression.sectionStatuses,
+    checkpoint_statuses: progression.checkpointStatuses,
+    quiz_unlocked: progression.quizUnlocked,
+    mastered_at: progression.masteredAt ?? null,
+    difficulty_level: progression.currentDifficultyLevel,
+    remediation_active: progression.remediationActive,
+    remediation_completed_at: progression.remediationCompletedAt ?? null,
+    created_at: progression.createdAt,
+    updated_at: Date.now(),
+  });
+  if (error) throw error;
+}
+
+function rowToProgression(row: Record<string, unknown>): import("./types").DocumentProgression {
+  return {
+    documentId: row.document_id as string,
+    sectionStatuses: row.section_statuses as import("./types").DocumentProgression["sectionStatuses"],
+    checkpointStatuses: row.checkpoint_statuses as import("./types").DocumentProgression["checkpointStatuses"],
+    quizUnlocked: row.quiz_unlocked as boolean,
+    masteredAt: (row.mastered_at as number | null) ?? null,
+    currentDifficultyLevel: (row.difficulty_level as import("./types").DocumentProgression["currentDifficultyLevel"]) ?? "beginner",
+    remediationActive: row.remediation_active as boolean,
+    remediationCompletedAt: (row.remediation_completed_at as number | null) ?? null,
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
+  };
+}
+
+// ─── Checkpoint Flashcards ────────────────────────────────────────────────────
+
+export async function getCheckpointFlashcards(documentId: string, checkpointIndex: number): Promise<import("./types").Flashcard[] | null> {
+  const { data, error } = await supabase
+    .from("checkpoint_flashcards")
+    .select("cards")
+    .eq("document_id", documentId)
+    .eq("checkpoint_index", checkpointIndex)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw error;
+  }
+  return data.cards as import("./types").Flashcard[];
+}
+
+export async function saveCheckpointFlashcards(documentId: string, checkpointIndex: number, cards: import("./types").Flashcard[]): Promise<void> {
+  const { error } = await supabase.from("checkpoint_flashcards").upsert({
+    document_id: documentId,
+    checkpoint_index: checkpointIndex,
+    cards,
+    generated_at: Date.now(),
+  });
+  if (error) throw error;
+}
+
+// ─── Remediation ──────────────────────────────────────────────────────────────
+
+export async function getLatestRemediationReviewer(documentId: string): Promise<{ weakTopics: string[]; content: import("./types").Reviewer } | null> {
+  const { data, error } = await supabase
+    .from("remediation_reviewers")
+    .select("weak_topics, content")
+    .eq("document_id", documentId)
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw error;
+  }
+  return { weakTopics: data.weak_topics as string[], content: data.content as import("./types").Reviewer };
+}
+
+export async function saveRemediationReviewer(documentId: string, weakTopics: string[], content: import("./types").Reviewer): Promise<void> {
+  const { error } = await supabase.from("remediation_reviewers").insert({
+    document_id: documentId,
+    weak_topics: weakTopics,
+    content,
+    generated_at: Date.now(),
+  });
+  if (error) throw error;
+}

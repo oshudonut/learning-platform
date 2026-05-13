@@ -135,6 +135,94 @@ export type TextChunk = {
   wordCount: number;
 };
 
+// ─── Mastery Progression ──────────────────────────────────────────────────────
+
+export type QuizDifficultyLevel = "beginner" | "intermediate" | "advanced" | "board_exam" | "extreme_recall";
+
+export type ReviewerSectionStatus = {
+  sectionIndex: number;
+  completed: boolean;
+  completedAt: number | null;
+};
+
+export type CheckpointStatus = {
+  checkpointIndex: number;   // 0–4
+  sectionsCovered: number[]; // which topic indices this checkpoint covers
+  flashcardsGenerated: boolean;
+  completed: boolean;
+  completedAt: number | null;
+};
+
+export type DocumentProgression = {
+  documentId: string;
+  sectionStatuses: ReviewerSectionStatus[];
+  checkpointStatuses: CheckpointStatus[];
+  quizUnlocked: boolean;
+  masteredAt: number | null;
+  currentDifficultyLevel: QuizDifficultyLevel;
+  remediationActive: boolean;
+  remediationCompletedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type OpenAnswerGradeResult = {
+  correct: boolean;
+  confidence: "high" | "medium" | "low";
+  feedback: string;
+};
+
+// ─── Extended Quiz Question Types ─────────────────────────────────────────────
+
+export type QuizQuestionType = "multiple_choice" | "true_false" | "identification" | "fill_in_the_blank";
+
+export type MultipleChoiceQuestion = {
+  type: "multiple_choice";
+  question: string;
+  choices: string[];
+  correctIndex: number;
+  explanation: string;
+  difficulty: "easy" | "medium" | "hard";
+  topic: string;
+};
+
+export type TrueFalseQuestion = {
+  type: "true_false";
+  question: string;
+  correctAnswer: boolean;
+  explanation: string;
+  difficulty: "easy" | "medium" | "hard";
+  topic: string;
+};
+
+export type IdentificationQuestion = {
+  type: "identification";
+  question: string;
+  correctAnswer: string;
+  acceptableVariants?: string[];
+  explanation: string;
+  difficulty: "easy" | "medium" | "hard";
+  topic: string;
+};
+
+export type FillInTheBlankQuestion = {
+  type: "fill_in_the_blank";
+  question: string;
+  template: string;
+  correctAnswer: string;
+  acceptableVariants?: string[];
+  explanation: string;
+  difficulty: "easy" | "medium" | "hard";
+  topic: string;
+};
+
+export type ExtendedQuizQuestion = MultipleChoiceQuestion | TrueFalseQuestion | IdentificationQuestion | FillInTheBlankQuestion;
+
+export type ExtendedQuiz = {
+  questions: ExtendedQuizQuestion[];
+  difficultyLevel: QuizDifficultyLevel;
+};
+
 // ─── Document ─────────────────────────────────────────────────────────────────
 
 export type Document = {
