@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 42 35% 90%;         /* warm cream #EEE8D6 */
+    --foreground: 0 0% 4%;            /* near-black #0A0A0A */
+    --card: 197 56% 90%;              /* soft cyan #D8ECF4 */
+    --card-foreground: 0 0% 6%;       /* near-black for readability */
+    --border: 38 25% 80%;             /* warm light border */
+    --input: 38 25% 80%;
+    --ring: 0 0% 4%;
+    --primary: 0 0% 4%;               /* near-black */
+    --primary-foreground: 0 0% 98%;   /* white */
+    --secondary: 42 30% 85%;          /* lighter cream */
+    --secondary-foreground: 0 0% 4%;
+    --muted: 42 30% 85%;              /* light cream muted */
+    --muted-foreground: 0 0% 40%;     /* medium gray */
+    --accent: 158 64% 52%;            /* mint green #34D399 */
+    --accent-foreground: 0 0% 4%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 158 64% 52%;
+    --success-foreground: 0 0% 4%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 4%;
+    --radius: 0.875rem;
+    --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-mono: ui-monospace, monospace;
+  }
+
+  html, body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background: rgba(10, 10, 10, 0.15);
+    color: #0A0A0A;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.32);
+  }
+}
+
+@layer utilities {
+  /* Light surface — replaces glassmorphism */
+  .glass {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #0A0A0A 0%, #3D3D3D 100%);
+  }
+
+  .gradient-text-warm {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #1A1A1A 0%, #4A4A4A 100%);
+  }
+
+  /* Background — warm cream with subtle square grid */
+  .bg-app {
+    background-color: #EEE8D6;
+    background-image:
+      linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .bg-surface {
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+  }
+
+  /* Text utilities */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Focus ring */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  /* Shimmer loading */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.04) 50%,
+      rgba(0, 0, 0, 0) 100%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  /* Dot grid pattern — updated for light bg */
+  .bg-dot-grid {
+    background-image: radial-gradient(circle, rgba(0, 0, 0, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Card hover — light theme */
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+
+  .card-hover:hover {
+    background: rgba(255, 255, 255, 0.5);
+    border-color: rgba(0, 0, 0, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Dark feature card accent bottom borders */
+  .feature-card-mint { border-bottom: 3px solid #6EE7B7; }
+  .feature-card-sky  { border-bottom: 3px solid #7DD3FC; }
+  .feature-card-coral { border-bottom: 3px solid #FCA5A5; }
+
+  /* Section label pill */
+  .section-label {
+    @apply inline-flex items-center rounded-full border border-foreground/20 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-foreground/70;
+  }
+
+  /* Hero badge — dark bottle-green gradient */
+  .hero-badge {
+    @apply inline-flex items-center rounded-full px-4 py-1.5 text-xs font-semibold text-white;
+    background: linear-gradient(135deg, #1C3A1C, #2D572D);
+  }
+
+  /* Prose styles for AI content */
+  .ai-prose h1, .ai-prose h2, .ai-prose h3 {
+    @apply font-semibold text-foreground mb-2 mt-4;
+  }
+  .ai-prose h1 { @apply text-xl; }
+  .ai-prose h2 { @apply text-lg; }
+  .ai-prose h3 { @apply text-base; }
+  .ai-prose p { @apply text-muted-foreground leading-relaxed mb-3; }
+  .ai-prose ul { @apply list-disc list-inside space-y-1 mb-3; }
+  .ai-prose li { @apply text-muted-foreground; }
+  .ai-prose strong { @apply text-foreground font-semibold; }
+  .ai-prose code { @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground/80; }
+}
