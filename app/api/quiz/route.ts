@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured } from "@/lib/claude";
-import { QUIZ_TASK, SYSTEM_PREAMBLE, buildQuizTask } from "@/lib/prompts";
+import { SYSTEM_PREAMBLE, buildQuizTask } from "@/lib/prompts";
 import { getDocument, updateDocument, getProgression } from "@/lib/store";
-import { QuizSchema } from "@/lib/types";
+import { ExtendedQuizSchema } from "@/lib/types";
 import type { QuizDifficultyLevel } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -31,25 +31,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Quiz locked", locked: true }, { status: 423 });
     }
 
-    if (doc.quiz && !force) {
+    // Skip cache if questions are in old format (no `type` field) — force regen
+    const cachedIsExtended = doc.quiz && Array.isArray((doc.quiz as { questions?: unknown[] }).questions) &&
+      typeof ((doc.quiz as { questions?: { type?: unknown }[] }).questions?.[0]?.type) === "string";
+    if (doc.quiz && !force && cachedIsExtended) {
       return NextResponse.json({ quiz: doc.quiz, cached: true });
     }
 
     const difficultyLevel = body.difficultyLevel ?? "beginner";
     const weakTopics = body.weakTopics ?? [];
-    const taskInstruction = difficultyLevel !== "beginner" || weakTopics.length > 0
-      ? buildQuizTask({ difficultyLevel, weakTopics })
-      : QUIZ_TASK;
+    const taskInstruction = buildQuizTask({ difficultyLevel, weakTopics });
 
     const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
-      schema: QuizSchema,
+      schema: ExtendedQuizSchema,
       systemPreamble: SYSTEM_PREAMBLE,
       documentText: doc.text,
       taskInstruction,
       maxTokens: 6000,
     });
 
-    await updateDocument(id, { quiz: parsed });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await updateDocument(id, { quiz: parsed as any });
 
     return NextResponse.json({
       quiz: parsed,

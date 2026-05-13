@@ -50,6 +50,62 @@ export const QuizSchema = z.object({
   questions: z.array(QuizQuestionSchema),
 });
 
+// ─── Extended Quiz Schemas (typed question variants) ──────────────────────────
+
+const difficulty = z.enum(["easy", "medium", "hard"]);
+
+const MultipleChoiceQuestionSchema = z.object({
+  type: z.literal("multiple_choice"),
+  question: z.string(),
+  choices: z.array(z.string()).length(4),
+  correctIndex: z.number().int().min(0).max(3),
+  explanation: z.string(),
+  difficulty,
+  topic: z.string(),
+});
+
+const TrueFalseQuestionSchema = z.object({
+  type: z.literal("true_false"),
+  question: z.string(),
+  correctAnswer: z.boolean(),
+  explanation: z.string(),
+  difficulty,
+  topic: z.string(),
+});
+
+const IdentificationQuestionSchema = z.object({
+  type: z.literal("identification"),
+  question: z.string(),
+  correctAnswer: z.string(),
+  acceptableVariants: z.array(z.string()).optional(),
+  explanation: z.string(),
+  difficulty,
+  topic: z.string(),
+});
+
+const FillInTheBlankQuestionSchema = z.object({
+  type: z.literal("fill_in_the_blank"),
+  question: z.string(),
+  template: z.string(),
+  correctAnswer: z.string(),
+  acceptableVariants: z.array(z.string()).optional(),
+  explanation: z.string(),
+  difficulty,
+  topic: z.string(),
+});
+
+export const ExtendedQuizQuestionSchema = z.discriminatedUnion("type", [
+  MultipleChoiceQuestionSchema,
+  TrueFalseQuestionSchema,
+  IdentificationQuestionSchema,
+  FillInTheBlankQuestionSchema,
+]);
+
+export const ExtendedQuizSchema = z.object({
+  questions: z.array(ExtendedQuizQuestionSchema),
+  difficultyLevel: z.string().optional(),
+});
+
 export type Quiz = z.infer<typeof QuizSchema>;
 export type QuizQuestion = z.infer<typeof QuizQuestionSchema>;
 
