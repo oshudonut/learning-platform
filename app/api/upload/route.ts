@@ -3,27 +3,68 @@ import { extractPdfText, chunkText } from "@/lib/pdf";
 import { ocrPdfWithVision } from "@/lib/claude";
 import { saveDocument, saveChunks } from "@/lib/store";
 import { randomId } from "@/lib/utils";
+import Anthropic from "@anthropic-ai/sdk";
+import mammoth from "mammoth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
-
-// Maximum characters stored in Document.text. Downstream AI calls that need
-// more context should retrieve the pre-computed chunks via getChunks() instead.
+const MAX_BYTES = 25 * 1024 * 1024;
 const TEXT_STORE_CAP = 60_000;
+
+const ACCEPTED_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+const ACCEPTED_EXTS = new Set([".pdf", ".docx", ".png", ".jpg", ".jpeg", ".webp"]);
+
+function ext(name: string) {
+  return name.slice(name.lastIndexOf(".")).toLowerCase();
+}
+
+async function ocrImageWithVision(buffer: Buffer, mimeType: string): Promise<string> {
+  const client = new Anthropic();
+  const b64 = buffer.toString("base64");
+  const response = await client.messages.create({
+    model: "claude-opus-4-5",
+    max_tokens: 8000,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mimeType as "image/png" | "image/jpeg" | "image/webp", data: b64 },
+          },
+          {
+            type: "text",
+            text: "Extract ALL readable text from this image. Preserve structure: headings, paragraphs, lists, tables. Return plain text only — no commentary, no markdown fences.",
+          },
+        ],
+      },
+    ],
+  });
+  return response.content.filter(b => b.type === "text").map(b => (b as { type: "text"; text: string }).text).join("\n");
+}
 
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const file = form.get("file");
+    const forceOcr = form.get("ocr") === "true";
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
+
+    const fileExt = ext(file.name);
+    if (!ACCEPTED_EXTS.has(fileExt)) {
       return NextResponse.json(
-        { error: "Only PDF files are supported in this MVP" },
+        { error: `Unsupported file type. Accepted: PDF, DOCX, PNG, JPG, WEBP` },
         { status: 400 },
       );
     }
@@ -35,50 +76,64 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const { text: pdfText, pages, truncated } = await extractPdfText(buffer);
-
-    let text = pdfText;
+    let text = "";
+    let pages = 0;
     let ocrUsed = false;
+    let truncated = false;
 
-    if (text.length < 200) {
-      // The PDF has too little embedded text — it is likely a scanned image.
-      // Fall back to Claude's vision-based OCR before giving up.
-      console.info("[upload] insufficient embedded text; falling back to Claude OCR");
+    if (fileExt === ".pdf") {
+      const extracted = await extractPdfText(buffer);
+      pages = extracted.pages;
+      truncated = extracted.truncated;
+
+      if (forceOcr || extracted.text.length < 200) {
+        console.info("[upload] using Claude OCR for PDF");
+        try {
+          text = await ocrPdfWithVision(buffer.toString("base64"));
+          ocrUsed = true;
+        } catch (ocrErr) {
+          console.error("[upload] Claude PDF OCR failed:", ocrErr);
+          if (extracted.text.length < 200) {
+            return NextResponse.json(
+              { error: "Could not extract text. Try re-scanning at higher resolution or provide a text-based PDF." },
+              { status: 422 },
+            );
+          }
+          text = extracted.text;
+        }
+      } else {
+        text = extracted.text;
+      }
+    } else if (fileExt === ".docx") {
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
+      if (text.length < 50) {
+        return NextResponse.json({ error: "Could not extract text from DOCX file." }, { status: 422 });
+      }
+    } else {
+      // Image file — always use vision OCR
+      const mimeType = file.type || (fileExt === ".png" ? "image/png" : fileExt === ".webp" ? "image/webp" : "image/jpeg");
       try {
-        const pdfBase64 = buffer.toString("base64");
-        text = await ocrPdfWithVision(pdfBase64);
+        text = await ocrImageWithVision(buffer, mimeType);
         ocrUsed = true;
-      } catch (ocrErr: unknown) {
-        const ocrMessage =
-          ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
-        console.error("[upload] Claude OCR fallback failed:", ocrMessage);
-        return NextResponse.json(
-          {
-            error:
-              "Could not extract text from this PDF. " +
-              "It appears to be a scanned image and OCR processing failed. " +
-              "Please try re-scanning at a higher resolution or providing a text-based PDF.",
-          },
-          { status: 422 },
-        );
+      } catch (ocrErr) {
+        console.error("[upload] image OCR failed:", ocrErr);
+        return NextResponse.json({ error: "Could not extract text from image." }, { status: 422 });
       }
     }
 
-    // Cap the stored text field. The chunks below cover the full document, so
-    // AI calls that need more than TEXT_STORE_CAP characters should use
-    // getChunks() rather than Document.text.
-    const storedText =
-      text.length > TEXT_STORE_CAP ? text.slice(0, TEXT_STORE_CAP) : text;
-
-    // Build chunks from the full extracted text before the cap is applied.
+    const storedText = text.length > TEXT_STORE_CAP ? text.slice(0, TEXT_STORE_CAP) : text;
     const chunks = chunkText(text);
-
     const id = randomId();
 
-    // Persist the document first; saveChunks resolves it by id.
+    const title = file.name
+      .replace(/\.(pdf|docx|png|jpe?g|webp)$/i, "")
+      .replace(/[-_]+/g, " ")
+      .trim();
+
     await saveDocument({
       id,
-      title: file.name.replace(/\.pdf$/i, ""),
+      title,
       filename: file.name,
       text: storedText,
       textLength: text.length,
@@ -89,7 +144,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       id,
-      title: file.name.replace(/\.pdf$/i, ""),
+      title,
       pages,
       textLength: text.length,
       chunkCount: chunks.length,

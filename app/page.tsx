@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { Brain, Sparkles, BookOpen, Layers, BarChart3, ArrowRight, Zap } from "lucide-react";
 import { UploadZone } from "@/components/upload-zone";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { listDocuments } from "@/lib/store";
 import { formatDistanceToNow } from "@/lib/utils";
 
@@ -125,10 +125,8 @@ const features = [
 
 export default function HomePage() {
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 ml-60 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-8 py-12">
+    <AppShell>
+      <div className="max-w-4xl mx-auto px-8 py-12">
           {/* Hero */}
           <div className="text-center mb-12">
             <div className="hero-badge gap-2 mb-6">
@@ -182,8 +180,7 @@ export default function HomePage() {
               ))}
             </div>
           </div>
-        </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

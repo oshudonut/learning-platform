@@ -13,7 +13,7 @@ import {
   BarChart3,
   Loader2,
 } from "lucide-react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import type { Analytics } from "@/lib/types";
@@ -69,12 +69,9 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <main className="flex-1 ml-60 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 text-primary animate-spin" />
-        </main>
-      </div>
+      <AppShell mainClassName="flex items-center justify-center">
+        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+      </AppShell>
     );
   }
 
@@ -125,10 +122,8 @@ export default function AnalyticsPage() {
   const scoreTrend = a.quizAttempts.slice(-10).map((q) => q.score);
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 ml-60 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-8 py-8">
+    <AppShell>
+      <div className="max-w-5xl mx-auto px-8 py-8">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
@@ -334,8 +329,7 @@ export default function AnalyticsPage() {
               </p>
             </div>
           )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

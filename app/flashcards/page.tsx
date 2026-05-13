@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Layers, Plus, ArrowRight, Trophy, Loader2 } from "lucide-react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
@@ -31,10 +31,8 @@ export default function FlashcardsPage() {
   const withoutCards = docs.filter((d) => !d.hasFlashcards);
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 ml-60 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-8 py-8">
+    <AppShell>
+      <div className="max-w-4xl mx-auto px-8 py-8">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -147,8 +145,7 @@ export default function FlashcardsPage() {
               )}
             </div>
           )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

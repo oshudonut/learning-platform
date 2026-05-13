@@ -12,8 +12,11 @@ import {
   Library,
   Sparkles,
   ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSidebar } from "./SidebarContext";
 
 const nav = [
   { href: "/", icon: Sparkles, label: "Home", exact: true },
@@ -25,31 +28,44 @@ const nav = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { collapsed, toggle } = useSidebar();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 w-60 flex flex-col border-r border-border bg-secondary/60 backdrop-blur-sm">
+    <aside
+      className={cn(
+        "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-border bg-secondary/60 backdrop-blur-sm transition-[width] duration-200 ease-in-out",
+        collapsed ? "w-[60px]" : "w-60",
+      )}
+    >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground/8 ring-1 ring-foreground/15">
+      <div className={cn(
+        "flex items-center gap-3 border-b border-border transition-all duration-200",
+        collapsed ? "px-3 py-5 justify-center" : "px-5 py-5",
+      )}>
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-foreground/8 ring-1 ring-foreground/15">
           <Brain className="h-4 w-4 text-foreground" />
         </div>
-        <div>
-          <span className="text-sm font-semibold text-foreground">Second Brain</span>
-          <p className="text-[10px] text-muted-foreground leading-none mt-0.5">AI Learning Platform</p>
-        </div>
+        {!collapsed && (
+          <div className="overflow-hidden">
+            <span className="text-sm font-semibold text-foreground whitespace-nowrap">Second Brain</span>
+            <p className="text-[10px] text-muted-foreground leading-none mt-0.5 whitespace-nowrap">AI Learning Platform</p>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
         {nav.map(({ href, icon: Icon, label, exact }) => {
           const active = exact ? pathname === href : pathname.startsWith(href);
           return (
             <Link key={href} href={href}>
               <motion.div
-                whileHover={{ x: 2 }}
+                whileHover={{ x: collapsed ? 0 : 2 }}
                 whileTap={{ scale: 0.98 }}
+                title={collapsed ? label : undefined}
                 className={cn(
                   "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
+                  collapsed && "justify-center",
                   active
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -68,9 +84,13 @@ export function Sidebar() {
                     active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground",
                   )}
                 />
-                <span className="relative">{label}</span>
-                {active && (
-                  <ChevronRight className="relative ml-auto h-3 w-3 text-foreground/50" />
+                {!collapsed && (
+                  <>
+                    <span className="relative whitespace-nowrap">{label}</span>
+                    {active && (
+                      <ChevronRight className="relative ml-auto h-3 w-3 text-foreground/50" />
+                    )}
+                  </>
                 )}
               </motion.div>
             </Link>
@@ -79,16 +99,35 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom section */}
-      <div className="px-4 py-4 border-t border-border">
-        <div className="rounded-lg bg-foreground/5 border border-foreground/10 p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <BookOpen className="h-3.5 w-3.5 text-foreground/60" />
-            <span className="text-xs font-medium text-foreground">Study tip</span>
+      <div className={cn("border-t border-border", collapsed ? "px-2 py-4" : "px-4 py-4")}>
+        {!collapsed && (
+          <div className="rounded-lg bg-foreground/5 border border-foreground/10 p-3 mb-3">
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen className="h-3.5 w-3.5 text-foreground/60" />
+              <span className="text-xs font-medium text-foreground">Study tip</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Spaced repetition improves retention by up to 200%. Review flashcards daily.
+            </p>
           </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Spaced repetition improves retention by up to 200%. Review flashcards daily.
-          </p>
-        </div>
+        )}
+        <button
+          onClick={toggle}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={cn(
+            "flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all",
+            collapsed && "justify-center",
+          )}
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="h-4 w-4 flex-shrink-0" />
+          ) : (
+            <>
+              <PanelLeftClose className="h-4 w-4 flex-shrink-0" />
+              <span className="whitespace-nowrap text-xs">Collapse</span>
+            </>
+          )}
+        </button>
       </div>
     </aside>
   );

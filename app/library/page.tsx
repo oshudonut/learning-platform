@@ -15,7 +15,7 @@ import {
   MessageSquare,
   RefreshCw,
 } from "lucide-react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "@/lib/utils";
 
@@ -77,10 +77,8 @@ export default function LibraryPage() {
   );
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 ml-60 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-8 py-8">
+    <AppShell>
+      <div className="max-w-5xl mx-auto px-8 py-8">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -229,8 +227,7 @@ export default function LibraryPage() {
               ))}
             </div>
           )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

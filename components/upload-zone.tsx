@@ -2,162 +2,257 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { Upload, Loader2, AlertCircle } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Upload,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  X,
+  FileText,
+  Image as ImageIcon,
+  FileType,
+  ScanLine,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type Phase = "idle" | "uploading" | "error";
+type FileStatus = "pending" | "uploading" | "done" | "error";
+
+type QueueItem = {
+  id: string;
+  file: File;
+  status: FileStatus;
+  error?: string;
+  docId?: string;
+};
+
+function fileIcon(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (["png", "jpg", "jpeg", "webp"].includes(ext ?? "")) return ImageIcon;
+  if (ext === "docx") return FileType;
+  return FileText;
+}
+
+function FileRow({ item, onRemove }: { item: QueueItem; onRemove: (id: string) => void }) {
+  const Icon = fileIcon(item.file.name);
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      className={cn(
+        "flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm",
+        item.status === "done" && "border-success/30 bg-success/5",
+        item.status === "error" && "border-destructive/30 bg-destructive/5",
+        item.status === "pending" && "border-border bg-card/50",
+        item.status === "uploading" && "border-primary/30 bg-primary/5",
+      )}
+    >
+      <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+      <span className="flex-1 truncate text-foreground">{item.file.name}</span>
+      {item.status === "uploading" && <Loader2 className="h-4 w-4 animate-spin text-primary flex-shrink-0" />}
+      {item.status === "done" && <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />}
+      {item.status === "error" && (
+        <span className="text-xs text-destructive max-w-[140px] truncate">{item.error}</span>
+      )}
+      {item.status === "pending" && (
+        <button
+          onClick={() => onRemove(item.id)}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </motion.div>
+  );
+}
+
+const ACCEPTED = ".pdf,.docx,.png,.jpg,.jpeg,.webp";
 
 export function UploadZone() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [filename, setFilename] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [ocrEnabled, setOcrEnabled] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      setError(null);
-      setFilename(file.name);
-      setPhase("uploading");
+  const addFiles = useCallback((files: File[]) => {
+    const items: QueueItem[] = files.map((f) => ({
+      id: Math.random().toString(36).slice(2),
+      file: f,
+      status: "pending",
+    }));
+    setQueue((prev) => [...prev, ...items]);
+  }, []);
 
-      const form = new FormData();
-      form.append("file", file);
-
-      try {
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          body: form,
-        });
-        if (!uploadRes.ok) {
-          const err = await uploadRes.json().catch(() => ({}));
-          throw new Error(err.error || `Upload failed (${uploadRes.status})`);
-        }
-        const { id } = (await uploadRes.json()) as { id: string };
-        router.push(`/document/${id}`);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-        setPhase("error");
-      }
-    },
-    [router],
-  );
+  const removeFromQueue = useCallback((id: string) => {
+    setQueue((prev) => prev.filter((item) => item.id !== id));
+  }, []);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
-      const file = e.dataTransfer.files?.[0];
-      if (file) void handleFile(file);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length) addFiles(files);
     },
-    [handleFile],
+    [addFiles],
   );
 
-  const busy = phase === "uploading";
+  const uploadAll = useCallback(async () => {
+    const pending = queue.filter((item) => item.status === "pending");
+    if (!pending.length) return;
+
+    setProcessing(true);
+    let firstDocId: string | null = null;
+
+    for (const item of pending) {
+      setQueue((prev) =>
+        prev.map((q) => (q.id === item.id ? { ...q, status: "uploading" } : q)),
+      );
+
+      const form = new FormData();
+      form.append("file", item.file);
+      if (ocrEnabled) form.append("ocr", "true");
+
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body: form });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(err.error ?? `Upload failed (${res.status})`);
+        }
+        const { id } = await res.json() as { id: string };
+        if (!firstDocId) firstDocId = id;
+        setQueue((prev) =>
+          prev.map((q) => (q.id === item.id ? { ...q, status: "done", docId: id } : q)),
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setQueue((prev) =>
+          prev.map((q) => (q.id === item.id ? { ...q, status: "error", error: message } : q)),
+        );
+      }
+    }
+
+    setProcessing(false);
+
+    if (firstDocId) {
+      router.push(`/document/${firstDocId}`);
+    }
+  }, [queue, ocrEnabled, router]);
+
+  const pendingCount = queue.filter((q) => q.status === "pending").length;
+  const isEmpty = queue.length === 0;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="w-full max-w-2xl"
+      className="w-full max-w-2xl space-y-3"
     >
+      {/* Drop zone */}
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        onClick={() => !busy && inputRef.current?.click()}
+        onClick={() => !processing && inputRef.current?.click()}
         className={cn(
-          "relative rounded-2xl border-2 border-dashed p-12 text-center transition-all cursor-pointer",
+          "relative rounded-2xl border-2 border-dashed p-10 text-center transition-all cursor-pointer",
           "bg-background/60 backdrop-blur-sm",
           dragOver
             ? "border-accent bg-accent/5 scale-[1.01]"
             : "border-border hover:border-accent/50",
-          busy && "pointer-events-none opacity-90",
+          processing && "pointer-events-none opacity-75",
         )}
       >
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,.pdf"
+          accept={ACCEPTED}
+          multiple
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void handleFile(f);
+            const files = Array.from(e.target.files ?? []);
+            if (files.length) addFiles(files);
+            e.target.value = "";
           }}
         />
 
-        <div className="flex flex-col items-center gap-4">
-          {phase === "idle" && (
-            <>
-              <div className="rounded-2xl bg-accent/10 p-4">
-                <Upload className="h-8 w-8 text-accent" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold">Drop a PDF to begin</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Textbook chapter, lecture notes, research paper — anything you
-                  need to learn
-                </p>
-              </div>
-              <Button variant="accent" size="lg" type="button">
-                <Upload className="h-4 w-4" />
-                Choose file
-              </Button>
-            </>
-          )}
-
-          {phase === "uploading" && (
-            <>
-              <div className="rounded-2xl bg-accent/10 p-4">
-                <Loader2 className="h-8 w-8 text-accent animate-spin" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold">Reading {filename}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Extracting text and structure
-                </p>
-              </div>
-            </>
-          )}
-
-          {phase === "error" && (
-            <>
-              <div className="rounded-2xl bg-destructive/10 p-4">
-                <AlertCircle className="h-8 w-8 text-destructive" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold">Something went wrong</p>
-                <p className="mt-1 text-sm text-muted-foreground max-w-md">
-                  {error}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPhase("idle");
-                  setError(null);
-                  setFilename(null);
-                }}
-              >
-                Try again
-              </Button>
-            </>
-          )}
+        <div className="flex flex-col items-center gap-3">
+          <div className="rounded-2xl bg-accent/10 p-4">
+            <Upload className="h-7 w-7 text-accent" />
+          </div>
+          <div>
+            <p className="text-base font-semibold">
+              {isEmpty ? "Drop files to begin" : "Drop more files"}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              PDF, DOCX, PNG, JPG, or WEBP — up to 25MB each
+            </p>
+          </div>
+          <Button variant="accent" size="sm" type="button">
+            <Upload className="h-4 w-4" />
+            Choose files
+          </Button>
         </div>
       </div>
 
-      <p className="mt-4 text-center text-xs text-muted-foreground">
-        PDFs up to 25MB. Scanned documents will need OCR (coming soon).
-      </p>
+      {/* OCR toggle */}
+      <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
+        <div
+          onClick={() => setOcrEnabled(!ocrEnabled)}
+          className={cn(
+            "relative h-5 w-9 rounded-full transition-colors",
+            ocrEnabled ? "bg-primary" : "bg-border",
+          )}
+        >
+          <div
+            className={cn(
+              "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+              ocrEnabled ? "translate-x-4" : "translate-x-0.5",
+            )}
+          />
+        </div>
+        <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <ScanLine className="h-3.5 w-3.5" />
+          Force OCR (for scanned PDFs)
+        </span>
+      </label>
+
+      {/* Queue */}
+      <AnimatePresence mode="popLayout">
+        {queue.map((item) => (
+          <FileRow key={item.id} item={item} onRemove={removeFromQueue} />
+        ))}
+      </AnimatePresence>
+
+      {/* Upload button */}
+      {pendingCount > 0 && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <Button
+            variant="accent"
+            className="w-full"
+            onClick={uploadAll}
+            disabled={processing}
+          >
+            {processing ? (
+              <><Loader2 className="h-4 w-4 animate-spin" />Processing…</>
+            ) : (
+              <><Upload className="h-4 w-4" />Upload {pendingCount} file{pendingCount !== 1 ? "s" : ""}</>
+            )}
+          </Button>
+        </motion.div>
+      )}
+
+      {isEmpty && (
+        <p className="text-center text-xs text-muted-foreground">
+          Supports PDF, DOCX, PNG, JPG, WEBP · Up to 25MB each
+        </p>
+      )}
     </motion.div>
   );
 }

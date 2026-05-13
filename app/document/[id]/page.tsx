@@ -15,9 +15,10 @@ import {
   ArrowLeft,
   Lock,
   Star,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { ReviewerView } from "@/components/reviewer/ReviewerView";
 import { QuizEngine } from "@/components/quiz/QuizEngine";
 import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
@@ -253,25 +254,19 @@ function DocumentPageInner() {
 
   if (docLoading) {
     return (
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <main className="flex-1 ml-60 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 text-primary animate-spin" />
-        </main>
-      </div>
+      <AppShell mainClassName="flex items-center justify-center">
+        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+      </AppShell>
     );
   }
 
   if (!doc) {
     return (
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <main className="flex-1 ml-60 flex flex-col items-center justify-center gap-4">
-          <AlertCircle className="h-12 w-12 text-destructive" />
-          <h2 className="text-xl font-semibold">Document not found</h2>
-          <Link href="/"><Button variant="outline"><ArrowLeft className="h-4 w-4" />Back to Home</Button></Link>
-        </main>
-      </div>
+      <AppShell mainClassName="flex flex-col items-center justify-center gap-4">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <h2 className="text-xl font-semibold">Document not found</h2>
+        <Link href="/"><Button variant="outline"><ArrowLeft className="h-4 w-4" />Back to Home</Button></Link>
+      </AppShell>
     );
   }
 
@@ -290,10 +285,8 @@ function DocumentPageInner() {
   ];
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 ml-60 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-8 py-8">
+    <AppShell>
+      <div className="max-w-4xl mx-auto px-8 py-8">
           {/* Header */}
           <div className="flex items-start justify-between gap-4 mb-8">
             <div className="flex items-start gap-4">
@@ -324,6 +317,18 @@ function DocumentPageInner() {
                 <span className="text-xs bg-success/10 text-success border border-success/20 px-2.5 py-1 rounded-full">
                   ✓ Flashcards
                 </span>
+              )}
+              {progression?.quizUnlocked && doc.hasReviewer && (
+                <a
+                  href={`/api/export?id=${doc.id}`}
+                  download
+                  title="Export reviewer as DOCX"
+                >
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Download className="h-3.5 w-3.5" />
+                    Export
+                  </Button>
+                </a>
               )}
             </div>
           </div>
@@ -517,20 +522,16 @@ function DocumentPageInner() {
             </motion.div>
           </AnimatePresence>
         </div>
-      </main>
-    </div>
+    </AppShell>
   );
 }
 
 export default function DocumentPage() {
   return (
     <Suspense fallback={
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <main className="flex-1 ml-60 flex items-center justify-center">
-          <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-        </main>
-      </div>
+      <AppShell mainClassName="flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </AppShell>
     }>
       <DocumentPageInner />
     </Suspense>

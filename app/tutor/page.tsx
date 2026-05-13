@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Bot, BookOpen, ChevronDown } from "lucide-react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { TutorChat } from "@/components/tutor/TutorChat";
 
 type DocOption = { id: string; title: string };
@@ -38,9 +38,7 @@ function TutorPageInner() {
   }
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 ml-60 flex flex-col overflow-hidden">
+    <AppShell mainClassName="flex flex-col overflow-hidden">
         {/* Header */}
         <div className="border-b border-border px-8 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -84,20 +82,16 @@ function TutorPageInner() {
             documentTitle={docTitle || undefined}
           />
         </div>
-      </main>
-    </div>
+    </AppShell>
   );
 }
 
 export default function TutorPage() {
   return (
     <Suspense fallback={
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <main className="flex-1 ml-60 flex items-center justify-center">
-          <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-        </main>
-      </div>
+      <AppShell mainClassName="flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </AppShell>
     }>
       <TutorPageInner />
     </Suspense>
