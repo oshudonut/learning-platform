@@ -132,11 +132,13 @@ export function FlashcardStudy({
   documentId,
   documentTitle,
   initialStates,
+  onSessionComplete,
 }: {
   cards: Flashcard[];
   documentId: string;
   documentTitle: string;
   initialStates?: FlashcardReviewState[];
+  onSessionComplete?: () => void;
 }) {
   const [states, setStates] = useState<FlashcardReviewState[]>(
     () => initialStates ?? initStates(cards),
@@ -193,6 +195,9 @@ export function FlashcardStudy({
         },
       }),
     }).catch(() => null);
+
+    // Notify parent that a full session was completed (used to gate quiz unlock)
+    onSessionComplete?.();
   }
 
   function handleRestart() {

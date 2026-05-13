@@ -162,6 +162,8 @@ export type DocumentProgression = {
   currentDifficultyLevel: QuizDifficultyLevel;
   remediationActive: boolean;
   remediationCompletedAt: number | null;
+  currentSectionIndex: number;
+  flashcardChallengeCompleted: boolean;
   createdAt: number;
   updatedAt: number;
 };

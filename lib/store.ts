@@ -431,6 +431,8 @@ export async function upsertProgression(progression: import("./types").DocumentP
     difficulty_level: progression.currentDifficultyLevel,
     remediation_active: progression.remediationActive,
     remediation_completed_at: progression.remediationCompletedAt ?? null,
+    current_section_index: progression.currentSectionIndex ?? 0,
+    flashcard_challenge_completed: progression.flashcardChallengeCompleted ?? false,
     created_at: progression.createdAt,
     updated_at: Date.now(),
   });
@@ -447,6 +449,8 @@ function rowToProgression(row: Record<string, unknown>): import("./types").Docum
     currentDifficultyLevel: (row.difficulty_level as import("./types").DocumentProgression["currentDifficultyLevel"]) ?? "beginner",
     remediationActive: row.remediation_active as boolean,
     remediationCompletedAt: (row.remediation_completed_at as number | null) ?? null,
+    currentSectionIndex: (row.current_section_index as number | null) ?? 0,
+    flashcardChallengeCompleted: (row.flashcard_challenge_completed as boolean | null) ?? false,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };

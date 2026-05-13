@@ -33,3 +33,8 @@ alter table quiz_attempts
   add column if not exists passed                 boolean not null default false,
   add column if not exists attempt_number         integer not null default 1,
   add column if not exists triggered_remediation  boolean not null default false;
+
+-- Add section navigation and flashcard gating columns
+ALTER TABLE document_progressions
+  ADD COLUMN IF NOT EXISTS current_section_index integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS flashcard_challenge_completed boolean DEFAULT false;

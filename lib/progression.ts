@@ -44,6 +44,8 @@ export function buildInitialProgression(documentId: string, totalSections: numbe
     currentDifficultyLevel: "beginner",
     remediationActive: false,
     remediationCompletedAt: null,
+    currentSectionIndex: 0,
+    flashcardChallengeCompleted: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -66,8 +68,7 @@ export function getPendingCheckpoint(progression: DocumentProgression): number |
 
 export function isQuizUnlockEligible(progression: DocumentProgression): boolean {
   const allSections = progression.sectionStatuses.every(s => s.completed);
-  const allCheckpoints = progression.checkpointStatuses.every(c => c.completed);
-  return allSections && allCheckpoints;
+  return allSections && progression.flashcardChallengeCompleted;
 }
 
 export function nextDifficultyLevel(current: QuizDifficultyLevel): QuizDifficultyLevel {

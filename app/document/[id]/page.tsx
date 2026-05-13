@@ -71,7 +71,8 @@ function GenerateButton({ label, onGenerate, loading }: { label: string; onGener
 function QuizLockedState({ progression }: { progression: DocumentProgression | null }) {
   const completedSections = progression?.sectionStatuses.filter(s => s.completed).length ?? 0;
   const totalSections = progression?.sectionStatuses.length ?? 0;
-  const completedCheckpoints = progression?.checkpointStatuses.filter(c => c.completed).length ?? 0;
+  const allSectionsDone = completedSections === totalSections && totalSections > 0;
+  const flashcardsDone = progression?.flashcardChallengeCompleted ?? false;
 
   return (
     <div className="flex flex-col items-center gap-6 py-16 text-center">
@@ -81,23 +82,24 @@ function QuizLockedState({ progression }: { progression: DocumentProgression | n
       <div>
         <h3 className="font-semibold text-foreground text-lg">Quiz Locked</h3>
         <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto">
-          Complete all reviewer sections and flashcard checkpoints to unlock Quiz Mode.
+          Complete the reviewer and flashcard challenge to unlock Quiz Mode.
         </p>
       </div>
       <div className="flex gap-6 text-sm">
         <div className="text-center">
-          <div className="text-2xl font-bold text-foreground">{completedSections}/{totalSections}</div>
+          <div className={cn("text-2xl font-bold", allSectionsDone ? "text-success" : "text-foreground")}>
+            {completedSections}/{totalSections}
+          </div>
           <div className="text-muted-foreground text-xs mt-0.5">Sections</div>
         </div>
         <div className="w-px bg-border" />
         <div className="text-center">
-          <div className="text-2xl font-bold text-foreground">{completedCheckpoints}/5</div>
-          <div className="text-muted-foreground text-xs mt-0.5">Checkpoints</div>
+          <div className={cn("text-2xl font-bold", flashcardsDone ? "text-success" : "text-foreground")}>
+            {flashcardsDone ? "Done" : "—"}
+          </div>
+          <div className="text-muted-foreground text-xs mt-0.5">Flashcard Challenge</div>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground max-w-xs">
-        Go to the Review tab and complete each section. A flashcard checkpoint appears every 20% to reinforce your learning.
-      </p>
     </div>
   );
 }
@@ -220,14 +222,27 @@ function DocumentPageInner() {
     if (data.progression) setProgression(data.progression);
   }, [id]);
 
-  const handleCheckpointComplete = useCallback(async (checkpointIndex: number) => {
+  // Called when the reviewer's "complete" screen CTA is clicked — switches to
+  // the flashcards tab and auto-loads cards if not already loaded.
+  const handleStartFlashcards = useCallback(async () => {
+    setActiveTab("flashcards");
+    if (flashcards.status === "idle") {
+      void loadFlashcards();
+    }
+  }, [flashcards.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Called when a flashcard session finishes — marks the challenge complete
+  // server-side, which in turn sets quizUnlocked when all sections are done.
+  const handleFlashcardChallengeComplete = useCallback(async () => {
     const res = await fetch("/api/progression", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "complete_checkpoint", documentId: id, checkpointIndex }),
+      body: JSON.stringify({ action: "complete_flashcard_challenge", documentId: id }),
     });
     const data = await res.json();
-    if (data.progression) setProgression(data.progression);
+    if (data.progression) {
+      setProgression(data.progression);
+    }
   }, [id]);
 
   const handleQuizComplete = useCallback(async (passed: boolean, weakTopics: string[]) => {
@@ -406,7 +421,7 @@ function DocumentPageInner() {
                         progression={progression ?? undefined}
                         documentId={id}
                         onSectionComplete={handleSectionComplete}
-                        onCheckpointComplete={handleCheckpointComplete}
+                        onStartFlashcards={handleStartFlashcards}
                       />
                     </div>
                   ) : null}
@@ -509,7 +524,12 @@ function DocumentPageInner() {
                           <RefreshCw className="h-3.5 w-3.5" />New Deck
                         </Button>
                       </div>
-                      <FlashcardStudy cards={flashcards.data} documentId={doc.id} documentTitle={doc.title} />
+                      <FlashcardStudy
+                        cards={flashcards.data}
+                        documentId={doc.id}
+                        documentTitle={doc.title}
+                        onSessionComplete={handleFlashcardChallengeComplete}
+                      />
                     </div>
                   ) : null}
                 </div>
