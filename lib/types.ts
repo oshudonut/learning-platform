@@ -191,6 +191,25 @@ export type TextChunk = {
   wordCount: number;
 };
 
+// ─── Learning Profile ─────────────────────────────────────────────────────────
+
+export type LearningMethod =
+  | "feynman"
+  | "active_recall"
+  | "spaced_repetition"
+  | "blurting"
+  | "mind_maps"
+  | "mnemonic"
+  | "interleaving"
+  | "elaboration"
+  | "sq3r"
+  | "pq4r"
+  | "leitner"
+  | "pomodoro"
+  | "multisensory";
+
+export type StudyMode = "cram" | "conceptual" | "board_exam" | "mastery";
+
 // ─── Mastery Progression ──────────────────────────────────────────────────────
 
 export type QuizDifficultyLevel = "beginner" | "intermediate" | "advanced" | "board_exam" | "extreme_recall";
@@ -220,6 +239,8 @@ export type DocumentProgression = {
   remediationCompletedAt: number | null;
   currentSectionIndex: number;
   flashcardChallengeCompleted: boolean;
+  learningMethod: LearningMethod | null;
+  studyMode: StudyMode | null;
   createdAt: number;
   updatedAt: number;
 };

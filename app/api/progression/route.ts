@@ -146,6 +146,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ progression });
     }
 
+    if (action === "save_learning_profile") {
+      const { learningMethod, studyMode } = body as { learningMethod: string; studyMode: string };
+      let progression = await getProgression(documentId);
+      if (!progression) {
+        const doc = await getDocument(documentId);
+        const totalSections = doc?.reviewer?.topics?.length ?? 0;
+        progression = buildInitialProgression(documentId, totalSections);
+      }
+      progression.learningMethod = learningMethod as import("@/lib/types").LearningMethod;
+      progression.studyMode = studyMode as import("@/lib/types").StudyMode;
+      await upsertProgression(progression);
+      return NextResponse.json({ progression });
+    }
+
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

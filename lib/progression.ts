@@ -46,6 +46,8 @@ export function buildInitialProgression(documentId: string, totalSections: numbe
     remediationCompletedAt: null,
     currentSectionIndex: 0,
     flashcardChallengeCompleted: false,
+    learningMethod: null,
+    studyMode: null,
     createdAt: now,
     updatedAt: now,
   };

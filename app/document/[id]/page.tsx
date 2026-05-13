@@ -20,11 +20,12 @@ import {
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { ReviewerView } from "@/components/reviewer/ReviewerView";
+import { MethodSelection } from "@/components/reviewer/MethodSelection";
 import { QuizEngine } from "@/components/quiz/QuizEngine";
 import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
 import { TutorChat } from "@/components/tutor/TutorChat";
 import { Button } from "@/components/ui/button";
-import type { Reviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel } from "@/lib/types";
+import type { Reviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Tab = "review" | "quiz" | "flashcards" | "tutor";
@@ -145,13 +146,13 @@ function DocumentPageInner() {
       .catch(() => null);
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadReviewer = useCallback(async (force = false) => {
+  const loadReviewer = useCallback(async (force = false, method?: LearningMethod, mode?: StudyMode) => {
     setReviewer({ status: "loading" });
     try {
       const res = await fetch("/api/reviewer", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, force }),
+        body: JSON.stringify({ id, force, learningMethod: method, studyMode: mode }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -172,6 +173,16 @@ function DocumentPageInner() {
       setReviewer({ status: "error", error: (err as Error).message });
     }
   }, [id, doc, progression]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleMethodSelect = useCallback(async (method: LearningMethod, mode: StudyMode) => {
+    // Save profile to progression first, then generate reviewer
+    await fetch("/api/progression", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "save_learning_profile", documentId: id, learningMethod: method, studyMode: mode }),
+    }).catch(() => null);
+    await loadReviewer(true, method, mode);
+  }, [id, loadReviewer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadQuiz = useCallback(async (force = false) => {
     setQuiz({ status: "loading" });
@@ -381,12 +392,14 @@ function DocumentPageInner() {
               {/* REVIEW TAB */}
               {activeTab === "review" && (
                 <div>
-                  {reviewer.status === "idle" || reviewer.status === "loading" ? (
+                  {reviewer.status === "idle" ? (
+                    <MethodSelection onGenerate={handleMethodSelect} />
+                  ) : reviewer.status === "loading" ? (
                     <div className="flex flex-col items-center gap-4 py-16">
                       <Loader2 className="h-8 w-8 text-primary animate-spin" />
                       <div className="text-center">
-                        <p className="font-medium text-foreground">Claude is building your reviewer…</p>
-                        <p className="text-sm text-muted-foreground mt-1">Analyzing structure, extracting concepts, building memory aids</p>
+                        <p className="font-medium text-foreground">Claude is building your adaptive reviewer…</p>
+                        <p className="text-sm text-muted-foreground mt-1">Applying your learning method and study mode</p>
                       </div>
                     </div>
                   ) : reviewer.status === "error" ? (
@@ -408,7 +421,8 @@ function DocumentPageInner() {
                           size="sm"
                           onClick={() => {
                             if (confirm("Regenerating will reset your section progress. Continue?")) {
-                              void loadReviewer(true);
+                              setReviewer({ status: "idle" });
+                              setProgression(null);
                             }
                           }}
                           className="text-muted-foreground hover:text-foreground"

@@ -11,43 +11,51 @@ import {
 import { getDocument, getProgression } from "@/lib/store";
 import type { Reviewer } from "@/lib/types";
 
+// Color palette
+const RED   = "C0392B"; // major topic headings
+const BLUE  = "1A5276"; // section label headings
+const GOLD  = "7D6608"; // must-memorize label
+const GRAY  = "555555"; // body labels
+
 function bullet(text: string, indent = 0): Paragraph {
   return new Paragraph({
-    text,
+    children: [new TextRun({ text, size: 20 })],
     bullet: { level: indent },
+    spacing: { after: 80 },
+  });
+}
+
+function mustMemorizeBullet(text: string): Paragraph {
+  return new Paragraph({
+    children: [
+      new TextRun({ text: "★  ", bold: true, color: GOLD, size: 20 }),
+      new TextRun({ text, bold: true, size: 20, highlight: "yellow" }),
+    ],
+    bullet: { level: 0 },
     spacing: { after: 80 },
   });
 }
 
 function heading2(text: string): Paragraph {
   return new Paragraph({
-    text,
-    heading: HeadingLevel.HEADING_2,
-    spacing: { before: 320, after: 120 },
+    children: [new TextRun({ text, bold: true, color: RED, size: 28 })],
+    spacing: { before: 360, after: 120 },
     border: {
-      bottom: { style: BorderStyle.SINGLE, size: 4, color: "AAAAAA" },
+      bottom: { style: BorderStyle.SINGLE, size: 6, color: RED },
     },
   });
 }
 
-function heading3(text: string): Paragraph {
+function label(text: string, color = BLUE): Paragraph {
   return new Paragraph({
-    text,
-    heading: HeadingLevel.HEADING_3,
-    spacing: { before: 200, after: 80 },
-  });
-}
-
-function label(text: string): Paragraph {
-  return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 20, color: "555555" })],
-    spacing: { before: 160, after: 60 },
+    children: [new TextRun({ text: text.toUpperCase(), bold: true, size: 18, color, allCaps: true })],
+    spacing: { before: 180, after: 60 },
   });
 }
 
 function body(text: string): Paragraph {
   return new Paragraph({
-    text,
+    children: [new TextRun({ text, size: 20 })],
     spacing: { after: 100 },
   });
 }
@@ -99,8 +107,8 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
     }
 
     if (topic.mustMemorize.length > 0) {
-      children.push(label("Must Memorize"));
-      for (const mm of topic.mustMemorize) children.push(bullet(`★  ${mm}`, 0));
+      children.push(label("Must Memorize", GOLD));
+      for (const mm of topic.mustMemorize) children.push(mustMemorizeBullet(mm));
     }
 
     if (topic.confusedWith && topic.confusedWith.length > 0) {
@@ -125,12 +133,12 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
   if (reviewer.globalMustMemorize.length > 0) {
     children.push(
       new Paragraph({
-        text: "Global Must-Memorize",
-        heading: HeadingLevel.HEADING_1,
-        spacing: { before: 400, after: 160 },
+        children: [new TextRun({ text: "Global Must-Memorize", bold: true, color: RED, size: 32 })],
+        spacing: { before: 480, after: 160 },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: GOLD } },
       }),
     );
-    for (const item of reviewer.globalMustMemorize) children.push(bullet(`★  ${item}`));
+    for (const item of reviewer.globalMustMemorize) children.push(mustMemorizeBullet(item));
   }
 
   // Mnemonics

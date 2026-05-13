@@ -38,3 +38,8 @@ alter table quiz_attempts
 ALTER TABLE document_progressions
   ADD COLUMN IF NOT EXISTS current_section_index integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS flashcard_challenge_completed boolean DEFAULT false;
+
+-- Add learning profile columns
+ALTER TABLE document_progressions
+  ADD COLUMN IF NOT EXISTS learning_method text DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS study_mode text DEFAULT NULL;

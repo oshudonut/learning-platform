@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
-import { REVIEWER_TASK, SYSTEM_PREAMBLE } from "@/lib/prompts";
-import { getDocument, updateDocument, computeContentHash } from "@/lib/store";
+import { REVIEWER_TASK, SYSTEM_PREAMBLE, buildAdaptiveReviewerTask } from "@/lib/prompts";
+import { getDocument, updateDocument, computeContentHash, getProgression } from "@/lib/store";
 import { ReviewerSchema } from "@/lib/types";
+import type { LearningMethod, StudyMode } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
-    const { id, force } = (await req.json()) as { id?: string; force?: boolean };
+    const { id, force, learningMethod, studyMode } = (await req.json()) as {
+      id?: string;
+      force?: boolean;
+      learningMethod?: LearningMethod;
+      studyMode?: StudyMode;
+    };
     if (!id) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
@@ -31,12 +37,25 @@ export async function POST(req: NextRequest) {
 
     const compressed = compressDocumentForReview(doc.text);
 
+    // Use saved learning profile from progression if not passed directly
+    let resolvedMethod = learningMethod;
+    let resolvedMode = studyMode;
+    if (!resolvedMethod || !resolvedMode) {
+      const progression = await getProgression(id);
+      resolvedMethod = resolvedMethod ?? progression?.learningMethod ?? undefined;
+      resolvedMode = resolvedMode ?? progression?.studyMode ?? undefined;
+    }
+
+    const taskInstruction = resolvedMethod && resolvedMode
+      ? buildAdaptiveReviewerTask(resolvedMethod, resolvedMode)
+      : REVIEWER_TASK;
+
     const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
       schema: ReviewerSchema,
       systemPreamble: SYSTEM_PREAMBLE,
       documentText: doc.text,
       compressedText: compressed,
-      taskInstruction: REVIEWER_TASK,
+      taskInstruction,
       maxTokens: 3000,
     });
 

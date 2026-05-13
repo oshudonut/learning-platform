@@ -433,6 +433,8 @@ export async function upsertProgression(progression: import("./types").DocumentP
     remediation_completed_at: progression.remediationCompletedAt ?? null,
     current_section_index: progression.currentSectionIndex ?? 0,
     flashcard_challenge_completed: progression.flashcardChallengeCompleted ?? false,
+    learning_method: progression.learningMethod ?? null,
+    study_mode: progression.studyMode ?? null,
     created_at: progression.createdAt,
     updated_at: Date.now(),
   });
@@ -451,6 +453,8 @@ function rowToProgression(row: Record<string, unknown>): import("./types").Docum
     remediationCompletedAt: (row.remediation_completed_at as number | null) ?? null,
     currentSectionIndex: (row.current_section_index as number | null) ?? 0,
     flashcardChallengeCompleted: (row.flashcard_challenge_completed as boolean | null) ?? false,
+    learningMethod: (row.learning_method as import("./types").LearningMethod | null) ?? null,
+    studyMode: (row.study_mode as import("./types").StudyMode | null) ?? null,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };

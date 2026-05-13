@@ -141,9 +141,46 @@ ${context}
 
 Draw from this material when relevant, but feel free to go beyond it to provide deeper context, analogies, or related knowledge. Always prioritize understanding over coverage.`;
 
-// ─── Checkpoint Flashcard task ────────────────────────────────────────────────
+// ─── Adaptive Reviewer task ───────────────────────────────────────────────────
 
-import type { QuizDifficultyLevel } from "./types";
+import type { LearningMethod, StudyMode, QuizDifficultyLevel } from "./types";
+
+const METHOD_INSTRUCTIONS: Record<LearningMethod, string> = {
+  feynman: "Use plain-language explanations as if teaching a beginner. Lead every topic with a simple analogy. Replace jargon with everyday equivalents. Make the explanation so clear a non-expert could understand it.",
+  active_recall: "Maximize recall prompts. Every section must end with 3–5 retrieval questions (not just listed in quickRecall — weave them into the content). Hide answers in quickRecall. Prioritize question → answer structure throughout.",
+  spaced_repetition: "Structure content for layered review. Flag items with HIGH / MEDIUM / LOW review priority in mustMemorize. Group facts that should be reviewed together. Emphasize spacing cues: 'review this again in 2 days'.",
+  blurting: "Open each topic with a 'Blurt Challenge' in coreIdea: tell the student to close their eyes and recall what they know before reading. Structure mustMemorize as blank-fill prompts: 'The ___ causes ___'. Focus on output-ready facts.",
+  mind_maps: "Organize content as connected nodes. In keyPoints, show parent → child relationships explicitly (use '→' arrows). Group concepts hierarchically. QuickBreakdown should be a relationship chain, not a list.",
+  mnemonic: "Generate memory shortcuts for every hard fact. Every mustMemorize item must have an acronym, rhyme, or vivid association in parentheses. Maximize the mnemonics array. Prioritize sticky associations over completeness.",
+  interleaving: "Mix topics deliberately. In quickBreakdown, contrast this topic against 1–2 adjacent topics from the material. In confusedWith, be aggressive — list every plausible mix-up. Cross-reference sections.",
+  elaboration: "Explain the WHY behind every fact. Every keyPoint must include its mechanism or reasoning. Avoid bare facts — always connect cause → effect → clinical relevance. Make the 'how' and 'why' explicit.",
+  sq3r: "Structure for SQ3R: Survey (coreIdea = overview), Question (quickRecall = questions before reading), Read (keyPoints = content), Recite (mustMemorize = recall points), Review (boardTips = review triggers).",
+  pq4r: "Structure for PQ4R: Preview (coreIdea), Question (quickRecall), Read (keyPoints), Reflect (quickBreakdown with analogies), Recite (mustMemorize), Review (boardTips).",
+  leitner: "Tag each mustMemorize fact with a Leitner box priority: [Box 1] for new/hard facts, [Box 2] for developing recall, [Box 3] for mastered facts. Help the student sort cards by difficulty.",
+  pomodoro: "Divide each topic into 25-minute study chunks. Label sections: [Session 1], [Session 2] etc. Keep each chunk focused on one concept. End each chunk with a 5-minute review task in quickRecall.",
+  multisensory: "Use multiple representation styles: verbal (keyPoints), visual (describe a diagram or chart in quickBreakdown), kinesthetic (suggest a hands-on activity or writing exercise in boardTips). Vary the format.",
+};
+
+const MODE_INSTRUCTIONS: Record<StudyMode, string> = {
+  cram: "CRAM MODE: Be ruthlessly concise. Only include what appears on exams. Cut all theory. Every bullet is a testable fact. Maximize mustMemorize. Keep keyPoints to 3 items max. Board tips = exam traps only. No filler.",
+  conceptual: "CONCEPTUAL MODE: Prioritize deep understanding. Explain mechanisms fully. Include the 'why' behind each fact. Use quickBreakdown to build mental models. Fewer bullets, more coherent explanation. Long-term retention over speed.",
+  board_exam: "BOARD EXAM MODE: Mirror actual exam question patterns. Every boardTip is a tested trap. mustMemorize = thresholds, formulas, and distinguishing features. quickRecall questions should be board-style clinical scenarios.",
+  mastery: "MASTERY MODE: Full depth and breadth. Include edge cases in confusedWith. Push difficulty in mustMemorize to include nuance and exceptions. boardTips should include advanced distinctions. Build toward expert-level understanding.",
+};
+
+export function buildAdaptiveReviewerTask(method: LearningMethod, mode: StudyMode): string {
+  return `${REVIEWER_TASK}
+
+LEARNING METHOD — ${method.replace(/_/g, " ").toUpperCase()}:
+${METHOD_INSTRUCTIONS[method]}
+
+STUDY MODE — ${mode.replace(/_/g, " ").toUpperCase()}:
+${MODE_INSTRUCTIONS[mode]}
+
+Apply BOTH the learning method style AND the study mode depth to every section. Do not mention these instructions in the output.`;
+}
+
+// ─── Checkpoint Flashcard task ────────────────────────────────────────────────
 
 export function buildCheckpointFlashcardTask(topicTitles: string[]): string {
   return `Generate 5–8 targeted flashcards for a checkpoint review.
