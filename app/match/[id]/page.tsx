@@ -73,6 +73,14 @@ export default function MatchPage() {
     fetchState();
   }, [fetchState]);
 
+  // While waiting for opponent: poll every 3 s so the lobby always reflects
+  // the latest participant list even if the Realtime event was missed.
+  useEffect(() => {
+    if (!match || match.status !== "waiting") return;
+    const interval = setInterval(fetchState, 3000);
+    return () => clearInterval(interval);
+  }, [match?.status, fetchState]);
+
   // Clear answer UI when question advances
   useEffect(() => {
     if (!match) return;
