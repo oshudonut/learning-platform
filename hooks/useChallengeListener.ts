@@ -53,7 +53,7 @@ export function useChallengeListener(
       } catch {
         // network error — silently skip
       }
-    }, 10_000);
+    }, 5_000);
 
     return () => {
       supabase.removeChannel(channel);

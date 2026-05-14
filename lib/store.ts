@@ -1202,7 +1202,7 @@ export async function createMatch(
 export async function getPendingInvitations(userId: string): Promise<MatchRoom[]> {
   const { data, error } = await supabase
     .from("match_rooms")
-    .select("*, user_profiles!left(display_name, username)")
+    .select("*, user_profiles!host_id(display_name, username)")
     .eq("invited_user_id", userId)
     .eq("status", "waiting")
     .order("created_at", { ascending: false });
