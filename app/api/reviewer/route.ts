@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       documentText: doc.text,
       compressedText: compressed,
       taskInstruction,
-      maxTokens: schemaType === "standard" ? 3000 : 6000,
+      maxTokens: schemaType === "standard" ? 8000 : 12000,
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

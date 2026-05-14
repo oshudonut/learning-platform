@@ -67,7 +67,7 @@ export async function generateStructured<S extends z.ZodTypeAny>({
   systemPreamble,
   documentText,
   taskInstruction,
-  maxTokens = 3000,
+  maxTokens = 8000,
   compressedText,
 }: GenerateOpts<S>): Promise<{
   parsed: z.infer<S>;

@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       systemPreamble: SYSTEM_PREAMBLE,
       documentText: doc.text,
       taskInstruction,
-      maxTokens: 6000,
+      maxTokens: 10000,
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

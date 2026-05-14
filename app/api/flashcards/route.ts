@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       systemPreamble: SYSTEM_PREAMBLE,
       documentText: doc.text,
       taskInstruction: FLASHCARD_TASK,
-      maxTokens: 6000,
+      maxTokens: 10000,
     });
 
     await updateDocument(id, { flashcards: parsed.cards });
