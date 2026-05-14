@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateStructured } from "@/lib/claude";
 import { SYSTEM_PREAMBLE, buildQuizTask } from "@/lib/prompts";
 import { getDocument, updateDocument, getProgression } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { ExtendedQuizSchema } from "@/lib/types";
 import type { QuizDifficultyLevel } from "@/lib/types";
 
@@ -10,6 +11,10 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = (await req.json()) as {
       id?: string;
       force?: boolean;
@@ -20,13 +25,13 @@ export async function POST(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
-    const doc = await getDocument(id);
+    const doc = await getDocument(id, user.id);
     if (!doc) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
     // Check quiz lock
-    const progression = await getProgression(doc.id);
+    const progression = await getProgression(doc.id, user.id);
     if (progression && !progression.quizUnlocked) {
       return NextResponse.json({ error: "Quiz locked", locked: true }, { status: 423 });
     }
@@ -51,7 +56,7 @@ export async function POST(req: NextRequest) {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await updateDocument(id, { quiz: parsed as any });
+    await updateDocument(id, user.id, { quiz: parsed as any });
 
     return NextResponse.json({
       quiz: parsed,

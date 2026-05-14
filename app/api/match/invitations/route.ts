@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
-import { getPendingInvitations, getDocument } from "@/lib/store";
+import { getPendingInvitations, getDocumentTitle } from "@/lib/store";
 
 export async function GET() {
   const supabase = createSupabaseServer();
@@ -15,8 +15,8 @@ export async function GET() {
       let documentTitle = "Untitled document";
       if (inv.documentId) {
         try {
-          const doc = await getDocument(inv.documentId);
-          if (doc) documentTitle = doc.title;
+          const title = await getDocumentTitle(inv.documentId);
+          if (title) documentTitle = title;
         } catch {
           // ignore — fallback title is fine
         }

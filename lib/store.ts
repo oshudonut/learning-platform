@@ -78,8 +78,19 @@ export async function saveDocument(doc: Document): Promise<void> {
   if (error) throw new Error(`saveDocument: ${error.message}`);
 }
 
+async function _getDocumentRaw(id: string): Promise<Document | null> {
+  const { data, error } = await supabase
+    .from("documents")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`getDocument: ${error.message}`);
+  if (!data) return null;
+  return fromRow(data as Record<string, unknown>);
+}
+
 export async function copyDocumentForUser(sourceDocId: string, targetUserId: string): Promise<Document> {
-  const source = await getDocument(sourceDocId);
+  const source = await _getDocumentRaw(sourceDocId);
   if (!source) throw new Error("Source document not found");
   const copy: Document = {
     ...source,
@@ -92,22 +103,34 @@ export async function copyDocumentForUser(sourceDocId: string, targetUserId: str
   return copy;
 }
 
-export async function getDocument(id: string): Promise<Document | null> {
+export async function getDocument(id: string, userId: string): Promise<Document | null> {
   const { data, error } = await supabase
     .from("documents")
     .select("*")
     .eq("id", id)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`getDocument: ${error.message}`);
   if (!data) return null;
   return fromRow(data as Record<string, unknown>);
 }
 
+export async function getDocumentTitle(id: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("documents")
+    .select("title")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`getDocumentTitle: ${error.message}`);
+  return (data?.title as string | null) ?? null;
+}
+
 export async function updateDocument(
   id: string,
+  userId: string,
   patch: Partial<Document>,
 ): Promise<Document> {
-  const existing = await getDocument(id);
+  const existing = await getDocument(id, userId);
   if (!existing) throw new Error(`Document ${id} not found`);
   const updated = { ...existing, ...patch };
   await saveDocument(updated);
@@ -168,22 +191,26 @@ export async function listDocuments(userId: string): Promise<
 
 export async function saveFlashcardReviewStates(
   docId: string,
+  userId: string,
   states: FlashcardReviewState[],
 ): Promise<void> {
   const { error } = await supabase
     .from("documents")
     .update({ flashcard_review_states: states })
-    .eq("id", docId);
+    .eq("id", docId)
+    .eq("user_id", userId);
   if (error) throw new Error(`saveFlashcardReviewStates: ${error.message}`);
 }
 
 export async function getFlashcardReviewStates(
   docId: string,
+  userId: string,
 ): Promise<FlashcardReviewState[]> {
   const { data, error } = await supabase
     .from("documents")
     .select("flashcard_review_states")
     .eq("id", docId)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`getFlashcardReviewStates: ${error.message}`);
   return (data?.flashcard_review_states as FlashcardReviewState[] | null) ?? [];
@@ -199,27 +226,23 @@ export async function getFlashcardReviewStates(
  */
 export async function saveChunks(
   docId: string,
+  userId: string,
   chunks: TextChunk[],
 ): Promise<void> {
   const { error } = await supabase
     .from("documents")
     .update({ chunks })
-    .eq("id", docId);
+    .eq("id", docId)
+    .eq("user_id", userId);
   if (error) throw new Error(`saveChunks: ${error.message}`);
 }
 
-/**
- * Retrieve the pre-computed chunks for a document.
- *
- * Returns an empty array when the document has no chunks yet (e.g. uploaded
- * before chunking was introduced) so callers can handle the missing-chunks
- * case without branching on undefined.
- */
-export async function getChunks(docId: string): Promise<TextChunk[]> {
+export async function getChunks(docId: string, userId: string): Promise<TextChunk[]> {
   const { data, error } = await supabase
     .from("documents")
     .select("chunks")
     .eq("id", docId)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`getChunks: ${error.message}`);
   return (data?.chunks as TextChunk[] | null) ?? [];
@@ -227,7 +250,7 @@ export async function getChunks(docId: string): Promise<TextChunk[]> {
 
 // ─── Conversations ────────────────────────────────────────────────────────────
 
-export async function saveConversation(conv: Conversation): Promise<void> {
+export async function saveConversation(conv: Conversation, userId: string): Promise<void> {
   const { error } = await supabase.from("conversations").upsert({
     id: conv.id,
     document_id: conv.documentId,
@@ -235,15 +258,17 @@ export async function saveConversation(conv: Conversation): Promise<void> {
     messages: conv.messages,
     created_at: conv.createdAt,
     updated_at: conv.updatedAt,
+    user_id: userId,
   });
   if (error) throw new Error(`saveConversation: ${error.message}`);
 }
 
-export async function getConversation(id: string): Promise<Conversation | null> {
+export async function getConversation(id: string, userId: string): Promise<Conversation | null> {
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
     .eq("id", id)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`getConversation: ${error.message}`);
   if (!data) return null;
@@ -259,11 +284,13 @@ export async function getConversation(id: string): Promise<Conversation | null> 
 }
 
 export async function listConversations(
+  userId: string,
   documentId?: string,
 ): Promise<Conversation[]> {
   let query = supabase
     .from("conversations")
     .select("*")
+    .eq("user_id", userId)
     .order("updated_at", { ascending: false });
   if (documentId !== undefined) {
     query = query.eq("document_id", documentId);
@@ -429,11 +456,13 @@ export function computeContentHash(text: string): string {
 
 export async function getDocumentByContentHash(
   hash: string,
+  userId: string,
 ): Promise<Document | null> {
   const { data, error } = await supabase
     .from("documents")
     .select("*")
     .eq("content_hash", hash)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`getDocumentByContentHash: ${error.message}`);
   if (!data) return null;
@@ -442,7 +471,16 @@ export async function getDocumentByContentHash(
 
 // ─── Document Progression ────────────────────────────────────────────────────
 
-export async function getProgression(documentId: string): Promise<import("./types").DocumentProgression | null> {
+export async function getProgression(documentId: string, userId: string): Promise<import("./types").DocumentProgression | null> {
+  // Verify document ownership before returning progression
+  const { data: ownerRow } = await supabase
+    .from("documents")
+    .select("id")
+    .eq("id", documentId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!ownerRow) return null;
+
   const { data, error } = await supabase
     .from("document_progressions")
     .select("*")

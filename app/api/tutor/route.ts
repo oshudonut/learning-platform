@@ -8,6 +8,7 @@ import {
   TUTOR_WITH_CONTEXT,
 } from "@/lib/prompts";
 import { getDocument, saveConversation, getConversation } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { randomId } from "@/lib/utils";
 import type { TutorMessage } from "@/lib/types";
 
@@ -16,6 +17,15 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const body = (await req.json()) as {
       message: string;
       conversationId?: string;
@@ -33,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     // Load or create conversation
     let conversation = conversationId
-      ? await getConversation(conversationId)
+      ? await getConversation(conversationId, user.id)
       : null;
 
     const convId = conversation?.id ?? randomId();
@@ -43,7 +53,7 @@ export async function POST(req: NextRequest) {
     let docTitle: string | null = null;
 
     if (documentId) {
-      const doc = await getDocument(documentId);
+      const doc = await getDocument(documentId, user.id);
       if (doc) {
         docTitle = doc.title;
         const context = retrieveContext(doc.text, message);
@@ -111,7 +121,7 @@ export async function POST(req: NextRequest) {
             messages: updatedMessages,
             createdAt: conversation?.createdAt ?? Date.now(),
             updatedAt: Date.now(),
-          });
+          }, user.id);
 
           controller.enqueue(
             new TextEncoder().encode(`data: ${JSON.stringify({ done: true })}\n`),

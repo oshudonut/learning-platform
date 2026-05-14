@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
 
   await ensureUserProfile(user.id, user.email ?? "");
 
-  const doc = await getDocument(documentId);
+  const doc = await getDocument(documentId, user.id);
   if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
 
   const questions = doc.quiz?.questions;

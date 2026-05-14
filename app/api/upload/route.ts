@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = createSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const form = await req.formData();
     const file = form.get("file");
@@ -146,11 +147,11 @@ export async function POST(req: NextRequest) {
       text: storedText,
       textLength: text.length,
       createdAt: Date.now(),
-      userId: user?.id ?? null,
+      userId: user.id,
       folderId: folderId ?? null,
     });
 
-    await saveChunks(id, chunks);
+    await saveChunks(id, user.id, chunks);
 
     return NextResponse.json({
       id,

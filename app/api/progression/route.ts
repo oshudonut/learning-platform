@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProgression, upsertProgression, getDocument } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { buildInitialProgression, getPendingCheckpoint, isQuizUnlockEligible, nextDifficultyLevel } from "@/lib/progression";
 import type { DocumentProgression } from "@/lib/types";
 
@@ -31,14 +32,18 @@ function rebuildSectionStatuses(
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = await req.json();
     const { action, documentId } = body as { action: string; documentId: string };
 
     if (!documentId) return NextResponse.json({ error: "documentId required" }, { status: 400 });
 
     if (action === "get") {
-      let progression = await getProgression(documentId);
-      const doc = await getDocument(documentId);
+      let progression = await getProgression(documentId, user.id);
+      const doc = await getDocument(documentId, user.id);
       if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
       const totalSections = doc.reviewer?.topics?.length ?? 0;
 
@@ -46,8 +51,6 @@ export async function POST(req: NextRequest) {
         progression = buildInitialProgression(documentId, totalSections);
         await upsertProgression(progression);
       } else if (totalSections > 0 && progression.sectionStatuses.length !== totalSections) {
-        // Reviewer was generated after the initial progression row was created —
-        // rebuild with the correct section count, preserving completed entries.
         progression = rebuildSectionStatuses(progression, totalSections);
         await upsertProgression(progression);
       }
@@ -57,17 +60,16 @@ export async function POST(req: NextRequest) {
 
     if (action === "complete_section") {
       const { sectionIndex } = body as { sectionIndex: number };
-      let progression = await getProgression(documentId);
+      let progression = await getProgression(documentId, user.id);
 
       if (!progression) {
-        const doc = await getDocument(documentId);
+        const doc = await getDocument(documentId, user.id);
         const totalSections = doc?.reviewer?.topics?.length ?? 0;
         progression = buildInitialProgression(documentId, totalSections);
       }
 
-      // If this sectionIndex doesn't exist in statuses yet, rebuild from reviewer
       if (!progression.sectionStatuses.find((s) => s.sectionIndex === sectionIndex)) {
-        const doc = await getDocument(documentId);
+        const doc = await getDocument(documentId, user.id);
         const totalSections = doc?.reviewer?.topics?.length ?? 0;
         progression = rebuildSectionStatuses(progression, totalSections);
       }
@@ -78,11 +80,10 @@ export async function POST(req: NextRequest) {
         section.completedAt = Date.now();
       }
 
-      // Advance currentSectionIndex to the next uncompleted section
       const nextUncompleted = progression.sectionStatuses.find((s) => !s.completed);
       progression.currentSectionIndex = nextUncompleted
         ? nextUncompleted.sectionIndex
-        : progression.sectionStatuses.length; // sentinel: all done
+        : progression.sectionStatuses.length;
 
       if (isQuizUnlockEligible(progression)) {
         progression.quizUnlocked = true;
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "complete_checkpoint") {
       const { checkpointIndex } = body as { checkpointIndex: number };
-      let progression = await getProgression(documentId);
+      let progression = await getProgression(documentId, user.id);
       if (!progression) return NextResponse.json({ error: "Progression not found" }, { status: 404 });
       const cp = progression.checkpointStatuses.find((c) => c.checkpointIndex === checkpointIndex);
       if (cp && !cp.completed) {
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "complete_flashcard_challenge") {
-      let progression = await getProgression(documentId);
+      let progression = await getProgression(documentId, user.id);
       if (!progression) return NextResponse.json({ error: "Progression not found" }, { status: 404 });
       progression.flashcardChallengeCompleted = true;
       if (isQuizUnlockEligible(progression)) {
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "complete_quiz") {
       const { passed } = body as { passed: boolean; difficultyLevel: string };
-      let progression = await getProgression(documentId);
+      let progression = await getProgression(documentId, user.id);
       if (!progression) return NextResponse.json({ error: "Progression not found" }, { status: 404 });
       if (passed) {
         progression.masteredAt = progression.masteredAt ?? Date.now();
@@ -137,7 +138,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "complete_remediation") {
-      let progression = await getProgression(documentId);
+      let progression = await getProgression(documentId, user.id);
       if (!progression) return NextResponse.json({ error: "Progression not found" }, { status: 404 });
       progression.remediationActive = false;
       progression.remediationCompletedAt = Date.now();
@@ -148,9 +149,9 @@ export async function POST(req: NextRequest) {
 
     if (action === "save_learning_profile") {
       const { learningMethod, studyMode } = body as { learningMethod: string; studyMode: string };
-      let progression = await getProgression(documentId);
+      let progression = await getProgression(documentId, user.id);
       if (!progression) {
-        const doc = await getDocument(documentId);
+        const doc = await getDocument(documentId, user.id);
         const totalSections = doc?.reviewer?.topics?.length ?? 0;
         progression = buildInitialProgression(documentId, totalSections);
       }

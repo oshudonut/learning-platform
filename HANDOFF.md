@@ -2,141 +2,167 @@
 
 ## Goal
 
-Transform the platform from a shared reviewer upload system into a fully private, user-isolated AI academic workspace with:
-
-1. Email-only auth (Google OAuth temporarily removed)
-2. Per-user isolated libraries (no user ever sees another user's data)
-3. Folder-based document organization
-4. Pre-generation reviewer setup flow (name + folder + learning method before generating)
-5. Library redesigned as a folder-first workspace (Notion/Obsidian-style)
+Transform the Second Brain platform into a production-grade, fully private AI academic workspace. The immediate goal is to resolve critical security and educational integrity issues identified by a 4-agent architectural audit, then improve AI efficiency and frontend robustness.
 
 ---
 
-## What's Done This Session
+## What Was Completed This Session
 
-### Auth cleanup — COMPLETE
-- `app/auth/login/page.tsx` — Google OAuth button, `handleGoogleLogin`, `oauthLoading` state, Chrome icon, and divider all removed
-- `app/auth/signup/page.tsx` — same removals
+### User isolation + folders + reviewer setup — SHIPPED TO PRODUCTION
 
-### Type system — COMPLETE
-- `lib/types.ts` — `Folder` type added (id, userId, name, color, createdAt, updatedAt)
-- `lib/types.ts` — `Document` type now has `folderId?: string | null`
+All items from the previous handoff are done and deployed:
 
-### Store layer — PARTIALLY DONE
-- `lib/store.ts` — `toRow` now includes `folder_id: doc.folderId ?? null`
-- `lib/store.ts` — `fromRow` now maps `folder_id` → `folderId`
-- Everything else in the store layer is NOT yet updated (see below)
+- **Store layer** — `listDocuments(userId: string)` required, always filters by user. `deleteDocument(id, userId)` enforces ownership. `recordQuizAttempt`, `recordFlashcardSession`, `getAnalytics` all accept `userId` and filter per-user. Private `_updateAnalyticsMeta(userId, studyMinutes)` helper added. Full Folder CRUD added: `createFolder`, `listFolders`, `updateFolder`, `deleteFolder`, `moveDocumentToFolder`, `renameDocument`.
+- **`/api/folders/route.ts`** — Created. GET lists folders, POST dispatches `create/update/delete/move_document/rename_document`.
+- **API routes updated** — `/api/library` (auth + userId on DELETE), `/api/analytics` (auth + userId on all), `/api/upload` (accepts `folderId` + `reviewerName`), `app/page.tsx` (RecentDocuments now server-side auth).
+- **UploadZone** — After upload, fetches folders and shows `ReviewerSetupModal`. `onConfirm` renames + moves doc then navigates. `onCancel` navigates without setup.
+- **Library page** — Full rewrite: folder grid, unfiled section, folder drill-down, breadcrumb, inline folder rename/delete, per-doc three-dot menu (open, rename, move to folder, delete).
+- **Auth cleanup** — Google OAuth removed from login and signup pages (email-only).
+- **Database migration** — `supabase/folders_and_isolation_migration.sql` applied to production Supabase.
+- **Committed** — `a9e1aeb` on `main`.
+- **Deployed** — Live at `https://learning-platform-tau-topaz.vercel.app`.
 
-### Database migration file — COMPLETE (not yet run)
-- `supabase/folders_and_isolation_migration.sql` — created, ready to run in Supabase SQL Editor
-- Contains: folders table, RLS policies, `folder_id` on documents, `user_id` on quiz_attempts and flashcard_sessions, analytics_meta per-user migration
+### 4-Agent Architectural Audit — COMPLETE (research only, no implementation)
 
-### ReviewerSetupModal — COMPLETE (not yet wired up)
-- `components/upload/ReviewerSetupModal.tsx` — full component built
-- Shows: reviewer name input, folder dropdown with inline "create folder" flow, 6-card learning method picker, "Generate" / "Skip" buttons
+A collaborative audit was run across four domains. Full findings are in the previous conversation turn. Summary of what was found:
 
 ---
 
-## What Is NOT Done
+## Critical Issues Identified (Not Yet Fixed)
 
-### Store layer — remaining changes needed in `lib/store.ts`
-- `listDocuments` — still has `userId?: string` (optional). Must be changed to required and always filter `.eq("user_id", userId)`. Also needs `folder_id` in SELECT clause and `folderId` in returned objects.
-- `deleteDocument` — must accept `userId: string` and add `.eq("user_id", userId)` to the query
-- `recordQuizAttempt` — needs `userId: string` param, `user_id: userId` in insert, and replace old meta block with `await _updateAnalyticsMeta(userId, 5)`
-- `recordFlashcardSession` — same pattern
-- `getAnalytics` — needs `userId: string` param, per-user filtering on all three queries
-- Private helper `_updateAnalyticsMeta(userId, studyMinutes)` — not yet added
-- **Folder CRUD functions** — not yet added: `createFolder`, `listFolders`, `updateFolder`, `deleteFolder`, `moveDocumentToFolder`, `renameDocument`
+These are the output of the architectural audit. Nothing has been implemented yet.
 
-### API routes — all need updating
-- `app/api/library/route.ts` — add auth check, pass `user.id` to `listDocuments` and `deleteDocument`
-- `app/api/folders/route.ts` — does not exist yet; must be created
-- `app/api/analytics/route.ts` — add auth, pass userId to analytics functions
-- `app/api/upload/route.ts` — accept `folderId` + `reviewerName` from form data; use custom name as title; pass folderId to saveDocument
+### C1 — Cross-user document access [CRITICAL — live data exposure]
+`getDocument(id)` in `lib/store.ts:94` has NO `userId` filter. Any authenticated user who knows a document ID can read another user's full document (text, reviewer, quiz, flashcards). The service-key Supabase client bypasses RLS entirely, making RLS policies decorative. Same exposure on:
+- `getProgression(documentId)` — `lib/store.ts:455`
+- `getDocumentByContentHash(hash)` — `lib/store.ts:440` (cross-user hash collision returns another user's doc)
+- `saveFlashcardReviewStates(docId, states)` — no userId check
+- `saveChunks(docId, chunks)` — no userId check
+- `listConversations()` — no userId column on `conversations` table, no RLS
 
-### Home page
-- `app/page.tsx` — `RecentDocuments` server component calls `listDocuments()` with no userId. Must add Supabase auth call and pass `user.id` (or return null if unauthenticated).
+### C2 — Checkpoint skip bypass [CRITICAL — mastery gate broken]
+`components/reviewer/CheckpointChallenge.tsx` shows a "Skip Checkpoint" button when flashcard cards fail to load. Clicking it calls `complete_checkpoint` via the progression API with a clean completion status — no cards seen, checkpoint marked done, mastery gate bypassed. Reproducible on any network error during checkpoint flashcard generation.
 
-### Frontend components — not yet created
-- `components/library/FolderCard.tsx` — folder card with colored icon, doc count, inline rename, delete confirm
-- `components/library/DocumentCard.tsx` — document card with three-dot menu (open, rename, move to folder, delete)
-- `app/library/page.tsx` — full rewrite needed: folder-first layout, active folder drill-down, breadcrumb navigation, parallel fetch from /api/library and /api/folders
+### C3 — Progression concurrent write race [CRITICAL]
+`upsertProgression` in `lib/store.ts:458` is a full-row read-modify-write in application memory. Two tabs marking a section complete simultaneously produce a last-write-wins collision. A user can have a checkpoint silently unmarked and be blocked from quiz unlock with no error. Fix requires either Postgres-level `jsonb_set()` for atomic partial updates OR optimistic locking on `updated_at`.
 
-### UploadZone — not yet wired to modal
-- `components/upload-zone.tsx` — needs to be modified to show `ReviewerSetupModal` after upload completes instead of immediately navigating to the document page
+### C4 — Reviewer→quiz coherence contract missing [CRITICAL]
+Quiz generation (`app/api/quiz/route.ts`) sends raw `doc.text` (up to 200K chars) to Claude independently of the reviewer. Quiz topics are AI-chosen from the full document, not constrained to what the reviewer taught. A student can master a reviewer on topics A/B/C and be quizzed on D/E/F.
 
 ---
 
-## Files Actively In Progress (partially modified, need completion)
+## High-Priority Issues (Not Yet Fixed)
 
-| File | Status |
-|------|--------|
-| `lib/store.ts` | toRow/fromRow updated; needs Folder CRUD + analytics user isolation |
-| `lib/types.ts` | Complete |
-| `components/upload/ReviewerSetupModal.tsx` | Complete; not yet used |
-| `supabase/folders_and_isolation_migration.sql` | Complete; NOT YET RUN in Supabase |
+- **H1** — Quiz and flashcard routes send uncapped raw `doc.text` (~50K tokens). Reviewer caps at 4K chars. Fix: shared `getContextForGeneration(doc, maxChars)` function.
+- **H2** — `learningMethod` ignored by quiz, SM-2 flashcard deck, and checkpoint flashcards. Only reviewer uses it. Feynman learner gets board-exam quiz — pedagogically inconsistent.
+- **H3** — Tutor RAG (keyword-based) silently fails for synonyms, terms ≤3 chars (pH, ATP), paraphrasing. Fallback is always `doc.text.slice(0, 3000)` regardless of where the answer sits.
+- **H4** — Tutor has zero prompt caching. `streamTutorResponse` re-sends full system prompt every turn. A 20-turn session pays full input token cost 20 times.
+- **H5** — `conversations` table has no `user_id` column and no RLS. Calling `listConversations()` with no documentId returns all users' tutor histories.
+- **H6** — `listDocuments` SELECTs full JSON blobs (`reviewer`, `quiz`, `flashcards`, `chunks`) then discards them to compute boolean flags in JS. Transfers up to 1MB per doc row just to get `hasReviewer: true`.
+- **H7** — 95% quiz threshold at 10 questions = zero tolerance (miss 1 = 90% = fail). Effectively a 100% gate.
+- **H8** — `complete_remediation` has no read-gate. User can call the endpoint immediately after failing, unlock the quiz without reading remediation.
+- **H9** — Missing DB indexes: `documents.user_id` (all user-scoped queries are sequential scans), `documents.content_hash` (dedup query is sequential scan), `user_profiles.xp` (leaderboard sort).
+- **H10** — `submitDocRename` and `handleDocMove` in library page have no rollback. Silent failure diverges UI from DB.
+
+---
+
+## Negotiated Cross-Agent Contracts (From Audit)
+
+These contracts must be implemented together — partial implementation of one without the other creates inconsistency.
+
+### DB Contracts
+- **DB-1**: `getDocument(id, userId)` — userId required, always `.eq("user_id", userId)`
+- **DB-2**: `getProgression(documentId, userId)` — verify document ownership before returning
+- **DB-3**: `upsertProgression` — include `updated_at` optimistic concurrency check; reject stale writes with 409
+- **DB-4**: `listDocuments` SELECT must exclude heavy JSON columns; derive counts via SQL
+- **DB-5**: After reviewer generation, write canonical `{ topicTitles[], contentHash }` to a new `reviewer_topics` table
+- **DB-6**: `complete_checkpoint` — require at least one `flashcard_review_event` record; write `skipped=true` if no cards seen
+- **DB-7**: `complete_remediation` — require at least one remediation section read timestamp
+- **DB-8**: Folder delete — atomically null `folder_id` on member documents in same transaction
+
+### AI Contracts
+- **AI-1**: Quiz generation must read `reviewer_topics` and pass as hard constraint: "Cover ONLY these topics"
+- **AI-2**: All generation routes must call shared `getContextForGeneration(doc, maxChars)`, never raw `doc.text`
+- **AI-3**: Quiz, checkpoint, SM-2 flashcard generation must read `progression.learningMethod` and apply method-specific framing
+- **AI-4**: Open-answer grading + checkpoint flashcard generation → downgrade to `claude-haiku-4-5`
+- **AI-5**: `streamTutorResponse` must apply `cache_control: { type: "ephemeral" }` to system prompt block
+- **AI-6**: Remediation topic list must be validated against `reviewer_topics.topicTitles` before AI call
+
+### Frontend Contracts
+- **FE-1**: All optimistic mutations (rename, move, delete) must capture previous state and roll back on failure
+- **FE-2**: Multi-file upload must surface per-file status and link each succeeded doc, not just `firstDocId`
+- **FE-3**: `LibraryPage` should be converted to Server Component; interactive logic extracted to client child
+- **FE-4**: Session expiry mid-session must trigger coordinated sign-out, not silently failing API calls
+
+---
+
+## Staged Execution Plan
+
+### Stage 1 — Security & Isolation [START HERE]
+Files to touch: `lib/store.ts`, `supabase/` (new migration for `conversations.user_id`, `document_progressions.user_id`, missing indexes)
+
+1. Add `userId` param to `getDocument`, `getProgression`, `getDocumentByContentHash`, `saveFlashcardReviewStates`, `saveChunks`
+2. Add `user_id` column + RLS to `conversations` table
+3. Add `user_id` column to `document_progressions` table
+4. Add missing indexes: `documents_user_id_idx`, `documents_content_hash_uidx`, `user_profiles_xp_idx`
+5. Remove `OR user_id IS NULL` from all RLS policies (after confirming no legacy user_id=NULL rows remain)
+6. Update all API routes that call the patched store functions to pass `user.id`
+7. Write and run new Supabase migration: `supabase/security_hardening_migration.sql`
+
+### Stage 2 — Educational Integrity
+1. Create `reviewer_topics` table (implements DB-5)
+2. Wire reviewer generation to write canonical topic list post-generation
+3. Update quiz route to read `reviewer_topics` and pass as constraint (AI-1)
+4. Fix checkpoint skip bypass — add server-side guard requiring flashcard_review_event (DB-6)
+5. Fix remediation gate — add section-read timestamp check (DB-7)
+6. Wire `learningMethod` to quiz + flashcard + checkpoint prompts (AI-3)
+
+### Stage 3 — AI Efficiency
+1. Implement `getContextForGeneration(doc, maxChars)` shared function in `lib/claude.ts` (AI-2)
+2. Apply to quiz and flashcard routes (removes 50K token waste per generation)
+3. Add `HAIKU_MODEL` constant; route grading + checkpoint generation to Haiku (AI-4)
+4. Add `cache_control` to tutor system prompt (AI-5)
+
+### Stage 4 — Frontend Robustness
+1. Add rollback to `submitDocRename` and `handleDocMove` (FE-1)
+2. Fix multi-file upload modal gap (FE-2)
+3. Add SM-2 due-date queue surfacing to flashcard study page
+4. Add debounce to library search
+
+### Stage 5 — DB Performance
+1. Fix `updateDocument` to direct `.update()` (remove sequential read leg)
+2. Fix `listDocuments` to exclude heavy JSON columns; compute counts in SQL
+3. Add pagination to `getAnalytics`
+4. Fix `submitAnswer` race in match mode (add FOR UPDATE lock or transaction)
+
+---
+
+## Files Actively In Progress / Partially Modified
+
+None — all changes from this session are committed. The next session starts clean from `a9e1aeb`.
 
 ---
 
 ## What Was Tried and Failed
 
-**Agent API rate limit** — Both the backend-db-architect and frontend-general-purpose agents hit the Supabase/Anthropic rate limit mid-session (`"You've hit your limit · resets 12:30am (Asia/Manila)"`). The backend agent completed Phase 2 (migration file) and partial Phase 3 (toRow/fromRow). The frontend agent created ReviewerSetupModal and cleaned up auth pages but did not complete the library rewrite or UploadZone changes.
+- **`NOTIFY pgrst, 'reload schema'`** — Ran in Supabase SQL Editor after migration but `folder_id` error persisted. Root cause was that the `ALTER TABLE documents ADD COLUMN folder_id` had silently been skipped because the `folders` table didn't exist yet when the full migration ran. Fix was to re-run `CREATE TABLE IF NOT EXISTS folders` + `ALTER TABLE` separately.
 
 ---
 
 ## Architecture Decisions Made This Session
 
-1. **Service-key client bypasses RLS** — `lib/supabase.ts` uses `SUPABASE_SECRET_KEY`. RLS policies in the migration are defense-in-depth only. Primary isolation is enforced via explicit `.eq("user_id", userId)` in every store function + auth checks at every API route level.
+1. **Service-key client bypasses RLS** — `lib/supabase.ts` uses `SUPABASE_SECRET_KEY`. RLS is defense-in-depth only. Primary isolation must be enforced via explicit `.eq("user_id", userId)` in every store function. This makes Stage 1 critical — RLS alone will never be sufficient given the service key.
 
-2. **Folder colors use a static lookup map** — Dynamic Tailwind class strings get purged. All folder color logic must use `folderColorMap` in `FolderCard.tsx` (see ReviewerSetupModal for the pattern).
+2. **`/api/folders` uses action-based dispatch** — Single POST endpoint handles create/update/delete/move_document/rename_document via an `action` field. GET lists folders.
 
-3. **Upload → setup modal → document page** — Reviewer generation is NOT triggered during upload. Upload saves the doc, modal collects name/folder/method, then navigation to `/document/[id]` triggers generation as before.
+3. **ReviewerSetupModal is post-upload, not pre-upload** — Upload saves the doc with filename-derived title. Modal collects name/folder/method after upload. Reviewer generation happens on the document page as before.
 
-4. **`/api/folders` uses action-based dispatch** — Single POST endpoint handles create/update/delete/move_document/rename_document via an `action` field in the body. Keeps the folder surface to GET + POST.
+4. **`reviewer_topics` table (proposed, not yet built)** — The correct fix for the reviewer→quiz coherence gap is a normalized table, not passing the full reviewer JSON to the quiz prompt. This is the key architectural addition for Stage 2.
 
-5. **analytics_meta per-user upsert** — Uses `onConflict: "user_id"` after adding the unique index. The legacy singleton row (id=1, user_id=NULL) is left intact.
-
----
-
-## Next Steps (in order)
-
-### Step 1 — Run the database migration
-Go to Supabase SQL Editor → paste contents of `supabase/folders_and_isolation_migration.sql` → run. Verify the `folders` table and new columns appear.
-
-### Step 2 — Complete store layer (`lib/store.ts`)
-
-Add the private helper and update analytics functions:
-```ts
-async function _updateAnalyticsMeta(userId: string, studyMinutes: number): Promise<void> { ... }
-```
-Change `listDocuments(userId?: string)` → `listDocuments(userId: string)` + always `.eq("user_id", userId)` + add `folder_id` to SELECT + expose `folderId` in returned objects.
-Change `deleteDocument(id: string)` → `deleteDocument(id: string, userId: string)`.
-Change analytics function signatures to accept `userId`.
-Add the Folder CRUD block (createFolder, listFolders, updateFolder, deleteFolder, moveDocumentToFolder, renameDocument).
-
-### Step 3 — Create `/app/api/folders/route.ts`
-Full content is specified in the orchestrator plan above. Import: createFolder, listFolders, updateFolder, deleteFolder, moveDocumentToFolder, renameDocument from `@/lib/store`.
-
-### Step 4 — Update existing API routes
-- `app/api/library/route.ts` — add auth, pass userId
-- `app/api/analytics/route.ts` — add auth, pass userId
-- `app/api/upload/route.ts` — accept folderId + reviewerName from form data
-- `app/page.tsx` — pass userId to listDocuments in RecentDocuments
-
-### Step 5 — Wire ReviewerSetupModal into UploadZone
-Modify `components/upload-zone.tsx`: after successful upload, instead of `router.push(...)`, fetch `/api/folders`, set `setupPending` state, render `<ReviewerSetupModal>`. Modal's onConfirm calls rename/move/progression APIs then navigates.
-
-### Step 6 — Build library components
-Create `components/library/FolderCard.tsx` and `components/library/DocumentCard.tsx`, then rewrite `app/library/page.tsx` as a client component with folder-first layout.
-
-### Step 7 — TypeScript check
-```bash
-cd /Users/davecardona/learning-platform && npx tsc --noEmit
-```
-Expected errors: callers of listDocuments/deleteDocument/analytics functions that don't yet pass userId. Fix each one.
+5. **Haiku for sub-500-token output tasks (proposed, not yet built)** — Open-answer grading and checkpoint flashcard generation are Haiku candidates. Saves ~5x on those call paths.
 
 ---
 
-## Key Reference: Orchestrator Plan
+## Key Reference: Architectural Audit
 
-The master-architect-orchestrator produced a detailed plan covering all 6 phases with exact SQL, function signatures, and component specs. That plan is in the conversation context of this session. If starting fresh, re-run the orchestrator with the same prompt (it will re-read the codebase) or reference this handoff for the specification.
+The 4-agent collaborative audit produced detailed findings across DB, AI, educational systems, and frontend domains. The full cross-agent report including all contracts and the dependency map is in the conversation context of this session. If starting fresh, the staged plan above is the distilled implementation roadmap — Stage 1 (Security & Isolation) is the mandatory first move.

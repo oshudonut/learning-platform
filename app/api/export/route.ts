@@ -9,6 +9,7 @@ import {
   BorderStyle,
 } from "docx";
 import { getDocument, getProgression } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import type { Reviewer } from "@/lib/types";
 
 // Color palette
@@ -172,13 +173,17 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
 }
 
 export async function GET(req: NextRequest) {
+  const supabase = createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const doc = await getDocument(id);
+  const doc = await getDocument(id, user.id);
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const progression = await getProgression(id);
+  const progression = await getProgression(id, user.id);
   if (!progression?.quizUnlocked) {
     return NextResponse.json({ error: "Complete all sections and pass the quiz to unlock export." }, { status: 403 });
   }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
 import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig } from "@/lib/prompts";
 import { getDocument, updateDocument, computeContentHash, getProgression } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import {
   ReviewerSchema,
   ConceptualReviewerSchema,
@@ -24,6 +25,10 @@ const SCHEMA_MAP = {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { id, force, learningMethod, studyMode } = (await req.json()) as {
       id?: string;
       force?: boolean;
@@ -34,7 +39,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
 
-    const doc = await getDocument(id);
+    const doc = await getDocument(id, user.id);
     if (!doc) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
@@ -54,7 +59,7 @@ export async function POST(req: NextRequest) {
     let resolvedMethod = learningMethod;
     let resolvedMode = studyMode;
     if (!resolvedMethod || !resolvedMode) {
-      const progression = await getProgression(id);
+      const progression = await getProgression(id, user.id);
       resolvedMethod = resolvedMethod ?? progression?.learningMethod ?? undefined;
       resolvedMode = resolvedMode ?? progression?.studyMode ?? undefined;
     }
@@ -82,7 +87,7 @@ export async function POST(req: NextRequest) {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await updateDocument(id, { reviewer: parsed as any, contentHash: incomingHash });
+    await updateDocument(id, user.id, { reviewer: parsed as any, contentHash: incomingHash });
 
     return NextResponse.json({
       reviewer: parsed,

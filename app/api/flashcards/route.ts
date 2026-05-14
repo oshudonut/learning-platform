@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateStructured } from "@/lib/claude";
 import { FLASHCARD_TASK, SYSTEM_PREAMBLE } from "@/lib/prompts";
 import { getDocument, updateDocument } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { FlashcardsSchema } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -9,12 +10,16 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { id, force } = (await req.json()) as { id?: string; force?: boolean };
     if (!id) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
 
-    const doc = await getDocument(id);
+    const doc = await getDocument(id, user.id);
     if (!doc) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
@@ -31,7 +36,7 @@ export async function POST(req: NextRequest) {
       maxTokens: 10000,
     });
 
-    await updateDocument(id, { flashcards: parsed.cards });
+    await updateDocument(id, user.id, { flashcards: parsed.cards });
 
     return NextResponse.json({
       flashcards: parsed.cards,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCheckpointFlashcards, saveCheckpointFlashcards, getDocument, getProgression, upsertProgression } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { generateStructured } from "@/lib/claude";
 import { buildCheckpointFlashcardTask, SYSTEM_PREAMBLE } from "@/lib/prompts";
 import { FlashcardsSchema } from "@/lib/types";
@@ -8,6 +9,10 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = await req.json();
     const { action, documentId, checkpointIndex } = body as { action: string; documentId: string; checkpointIndex: number };
 
@@ -22,10 +27,10 @@ export async function POST(req: NextRequest) {
       const existing = await getCheckpointFlashcards(documentId, checkpointIndex);
       if (existing && !body.force) return NextResponse.json({ cards: existing });
 
-      const doc = await getDocument(documentId);
+      const doc = await getDocument(documentId, user.id);
       if (!doc?.reviewer) return NextResponse.json({ error: "No reviewer found" }, { status: 404 });
 
-      const progression = await getProgression(documentId);
+      const progression = await getProgression(documentId, user.id);
       const cp = progression?.checkpointStatuses[checkpointIndex];
       const coveredIndices = cp?.sectionsCovered ?? [];
       const coveredTopics = coveredIndices

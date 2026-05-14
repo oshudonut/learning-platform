@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLatestRemediationReviewer, saveRemediationReviewer, getDocument, getProgression, upsertProgression } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { generateStructured } from "@/lib/claude";
 import { REMEDIATION_REVIEWER_TASK, SYSTEM_PREAMBLE } from "@/lib/prompts";
 import { ReviewerSchema } from "@/lib/types";
@@ -8,6 +9,10 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = await req.json();
     const { action, documentId } = body as { action: string; documentId: string };
 
@@ -20,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "generate") {
       const { weakTopics } = body as { weakTopics: string[] };
-      const doc = await getDocument(documentId);
+      const doc = await getDocument(documentId, user.id);
       if (!doc?.reviewer) return NextResponse.json({ error: "No reviewer found" }, { status: 404 });
 
       const relevantTopics = doc.reviewer.topics.filter(t =>
@@ -44,7 +49,7 @@ export async function POST(req: NextRequest) {
 
       await saveRemediationReviewer(documentId, weakTopics, reviewer);
 
-      const progression = await getProgression(documentId);
+      const progression = await getProgression(documentId, user.id);
       if (progression) {
         progression.remediationActive = true;
         await upsertProgression(progression);
@@ -54,7 +59,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "complete") {
-      const progression = await getProgression(documentId);
+      const progression = await getProgression(documentId, user.id);
       if (!progression) return NextResponse.json({ error: "Progression not found" }, { status: 404 });
       progression.remediationActive = false;
       progression.remediationCompletedAt = Date.now();
