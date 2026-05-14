@@ -8,7 +8,24 @@ import type {
   Conversation,
   FlashcardReviewState,
   TextChunk,
+  UserProfile,
+  Workspace,
+  StudyGroup,
+  StudyGroupMember,
+  Badge,
+  BadgeType,
+  Challenge,
+  ChallengeParticipant,
+  LeaderboardEntry,
+  XpEvent,
+  QuizDifficultyLevel,
+  FriendRequest,
+  MatchRoom,
+  MatchParticipant,
+  MatchAnswer,
+  QuizQuestion,
 } from "./types";
+import { XP_AWARDS, XP_LEVEL_THRESHOLDS } from "./types";
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 
@@ -511,4 +528,804 @@ export async function saveRemediationReviewer(documentId: string, weakTopics: st
     generated_at: Date.now(),
   });
   if (error) throw error;
+}
+
+// ─── User Profiles ────────────────────────────────────────────────────────────
+
+function rowToProfile(row: Record<string, unknown>): UserProfile {
+  return {
+    id: row.id as string,
+    username: row.username as string,
+    displayName: row.display_name as string,
+    avatarUrl: (row.avatar_url as string | null) ?? null,
+    bio: (row.bio as string | null) ?? null,
+    xp: (row.xp as number) ?? 0,
+    level: (row.level as number) ?? 1,
+    studyStreak: (row.study_streak as number) ?? 0,
+    lastActive: (row.last_active as number | null) ?? null,
+    createdAt: row.created_at as number,
+  };
+}
+
+export async function getProfile(userId: string): Promise<UserProfile | null> {
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`getProfile: ${error.message}`);
+  if (!data) return null;
+  return rowToProfile(data as Record<string, unknown>);
+}
+
+export async function updateProfile(
+  userId: string,
+  patch: Partial<Pick<UserProfile, "displayName" | "bio" | "avatarUrl">>,
+): Promise<UserProfile> {
+  const update: Record<string, unknown> = {};
+  if (patch.displayName !== undefined) update.display_name = patch.displayName;
+  if (patch.bio !== undefined) update.bio = patch.bio;
+  if (patch.avatarUrl !== undefined) update.avatar_url = patch.avatarUrl;
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .update(update)
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateProfile: ${error.message}`);
+  return rowToProfile(data as Record<string, unknown>);
+}
+
+// ─── XP & Level ───────────────────────────────────────────────────────────────
+
+function calcLevel(xp: number): number {
+  let level = 1;
+  for (let i = XP_LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (xp >= XP_LEVEL_THRESHOLDS[i]) {
+      level = i + 1;
+      break;
+    }
+  }
+  return level;
+}
+
+/**
+ * Award XP to a user. Updates xp, level, study_streak, last_active, and
+ * logs to daily_xp_log (upsert). Returns the updated profile.
+ */
+export async function awardXp(userId: string, event: XpEvent): Promise<UserProfile> {
+  const amount = XP_AWARDS[event];
+  const profile = await getProfile(userId);
+  if (!profile) throw new Error(`awardXp: user ${userId} not found`);
+
+  const newXp = profile.xp + amount;
+  const newLevel = calcLevel(newXp);
+
+  // Streak: if last_active was yesterday, increment; if today, keep; else reset to 1
+  const nowMs = Date.now();
+  const oneDayMs = 86_400_000;
+  let newStreak = profile.studyStreak;
+  if (!profile.lastActive) {
+    newStreak = 1;
+  } else {
+    const daysSince = Math.floor((nowMs - profile.lastActive) / oneDayMs);
+    if (daysSince === 0) {
+      // same day — streak unchanged
+    } else if (daysSince === 1) {
+      newStreak = profile.studyStreak + 1;
+    } else {
+      newStreak = 1;
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .update({ xp: newXp, level: newLevel, study_streak: newStreak, last_active: nowMs })
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) throw new Error(`awardXp update: ${error.message}`);
+
+  // Log to daily_xp_log — direct upsert (simpler than an RPC that may not exist)
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+  try {
+    const { data: existingLog } = await supabase
+      .from("daily_xp_log")
+      .select("xp_earned")
+      .eq("user_id", userId)
+      .eq("day", today)
+      .maybeSingle();
+    const currentDayXp = (existingLog?.xp_earned as number | null) ?? 0;
+    await supabase.from("daily_xp_log").upsert(
+      { user_id: userId, day: today, xp_earned: currentDayXp + amount },
+      { onConflict: "user_id,day" },
+    );
+  } catch {
+    // Non-critical — do not throw
+  }
+
+  return rowToProfile(data as Record<string, unknown>);
+}
+
+// ─── Leaderboard ──────────────────────────────────────────────────────────────
+
+export async function getLeaderboard(limit = 50): Promise<LeaderboardEntry[]> {
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("id, username, display_name, avatar_url, xp, level, study_streak")
+    .order("xp", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`getLeaderboard: ${error.message}`);
+  return (data ?? []).map((row, i) => {
+    const r = row as Record<string, unknown>;
+    return {
+      rank: i + 1,
+      userId: r.id as string,
+      username: r.username as string,
+      displayName: r.display_name as string,
+      avatarUrl: (r.avatar_url as string | null) ?? null,
+      xp: r.xp as number,
+      level: r.level as number,
+      studyStreak: r.study_streak as number,
+    };
+  });
+}
+
+// ─── Badges ───────────────────────────────────────────────────────────────────
+
+export async function getBadges(userId: string): Promise<Badge[]> {
+  const { data, error } = await supabase
+    .from("badges")
+    .select("*")
+    .eq("user_id", userId)
+    .order("earned_at", { ascending: false });
+  if (error) throw new Error(`getBadges: ${error.message}`);
+  return (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      id: r.id as number,
+      userId: r.user_id as string,
+      badgeType: r.badge_type as BadgeType,
+      earnedAt: r.earned_at as number,
+      metadata: (r.metadata as Record<string, unknown>) ?? {},
+    };
+  });
+}
+
+/**
+ * Award a badge. No-ops if the badge already exists (unique index).
+ * Uses the service-key client which bypasses the restrictive RLS policy.
+ */
+export async function awardBadge(
+  userId: string,
+  badgeType: BadgeType,
+  metadata: Record<string, unknown> = {},
+): Promise<void> {
+  const { error } = await supabase.from("badges").insert({
+    user_id: userId,
+    badge_type: badgeType,
+    earned_at: Date.now(),
+    metadata,
+  });
+  // Unique constraint violation = badge already awarded — that's fine
+  if (error && !error.message.includes("unique") && !error.message.includes("duplicate")) {
+    throw new Error(`awardBadge: ${error.message}`);
+  }
+}
+
+// ─── Workspaces ───────────────────────────────────────────────────────────────
+
+function rowToWorkspace(row: Record<string, unknown>): Workspace {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    name: row.name as string,
+    description: (row.description as string | null) ?? null,
+    color: (row.color as string) ?? "blue",
+    createdAt: row.created_at as number,
+  };
+}
+
+export async function createWorkspace(ws: Omit<Workspace, "createdAt"> & { id: string }): Promise<Workspace> {
+  const { data, error } = await supabase
+    .from("workspaces")
+    .insert({
+      id: ws.id,
+      user_id: ws.userId,
+      name: ws.name,
+      description: ws.description ?? null,
+      color: ws.color,
+      created_at: Date.now(),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`createWorkspace: ${error.message}`);
+  return rowToWorkspace(data as Record<string, unknown>);
+}
+
+export async function listWorkspaces(userId: string): Promise<Workspace[]> {
+  const { data, error } = await supabase
+    .from("workspaces")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`listWorkspaces: ${error.message}`);
+  return (data ?? []).map((r) => rowToWorkspace(r as Record<string, unknown>));
+}
+
+export async function updateWorkspace(
+  id: string,
+  userId: string,
+  patch: Partial<Pick<Workspace, "name" | "description" | "color">>,
+): Promise<Workspace> {
+  const { data, error } = await supabase
+    .from("workspaces")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateWorkspace: ${error.message}`);
+  return rowToWorkspace(data as Record<string, unknown>);
+}
+
+export async function deleteWorkspace(id: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("workspaces")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw new Error(`deleteWorkspace: ${error.message}`);
+}
+
+// ─── Study Groups ─────────────────────────────────────────────────────────────
+
+function rowToGroup(row: Record<string, unknown>): StudyGroup {
+  return {
+    id: row.id as string,
+    ownerId: row.owner_id as string,
+    name: row.name as string,
+    description: (row.description as string | null) ?? null,
+    inviteCode: row.invite_code as string,
+    maxMembers: row.max_members as number,
+    createdAt: row.created_at as number,
+  };
+}
+
+export async function createStudyGroup(
+  group: Pick<StudyGroup, "id" | "ownerId" | "name" | "description" | "inviteCode" | "maxMembers">,
+): Promise<StudyGroup> {
+  const now = Date.now();
+
+  const { data: groupData, error: groupError } = await supabase
+    .from("study_groups")
+    .insert({
+      id: group.id,
+      owner_id: group.ownerId,
+      name: group.name,
+      description: group.description ?? null,
+      invite_code: group.inviteCode,
+      max_members: group.maxMembers,
+      created_at: now,
+    })
+    .select()
+    .single();
+  if (groupError) throw new Error(`createStudyGroup: ${groupError.message}`);
+
+  // Add the creator as owner-role member
+  const { error: memberError } = await supabase.from("study_group_members").insert({
+    group_id: group.id,
+    user_id: group.ownerId,
+    role: "owner",
+    joined_at: now,
+  });
+  if (memberError) throw new Error(`createStudyGroup member: ${memberError.message}`);
+
+  return rowToGroup(groupData as Record<string, unknown>);
+}
+
+export async function getStudyGroup(groupId: string): Promise<StudyGroup | null> {
+  const { data, error } = await supabase
+    .from("study_groups")
+    .select("*")
+    .eq("id", groupId)
+    .maybeSingle();
+  if (error) throw new Error(`getStudyGroup: ${error.message}`);
+  if (!data) return null;
+  return rowToGroup(data as Record<string, unknown>);
+}
+
+export async function listStudyGroups(userId: string): Promise<StudyGroup[]> {
+  // Get all groups where the user is a member
+  const { data, error } = await supabase
+    .from("study_group_members")
+    .select("group_id, study_groups(*)")
+    .eq("user_id", userId);
+  if (error) throw new Error(`listStudyGroups: ${error.message}`);
+  return (data ?? [])
+    .map((row) => {
+      const r = row as Record<string, unknown>;
+      const g = r.study_groups as Record<string, unknown> | null;
+      return g ? rowToGroup(g) : null;
+    })
+    .filter((g): g is StudyGroup => g !== null);
+}
+
+export async function getStudyGroupByInviteCode(inviteCode: string): Promise<StudyGroup | null> {
+  const { data, error } = await supabase
+    .from("study_groups")
+    .select("*")
+    .eq("invite_code", inviteCode)
+    .maybeSingle();
+  if (error) throw new Error(`getStudyGroupByInviteCode: ${error.message}`);
+  if (!data) return null;
+  return rowToGroup(data as Record<string, unknown>);
+}
+
+export async function joinStudyGroup(groupId: string, userId: string): Promise<void> {
+  // Check member count against limit
+  const group = await getStudyGroup(groupId);
+  if (!group) throw new Error("Group not found");
+
+  const { count, error: countError } = await supabase
+    .from("study_group_members")
+    .select("*", { count: "exact", head: true })
+    .eq("group_id", groupId);
+  if (countError) throw new Error(`joinStudyGroup count: ${countError.message}`);
+  if ((count ?? 0) >= group.maxMembers) throw new Error("Group is full");
+
+  const { error } = await supabase.from("study_group_members").insert({
+    group_id: groupId,
+    user_id: userId,
+    role: "member",
+    joined_at: Date.now(),
+  });
+  // Ignore duplicate (already a member)
+  if (error && !error.message.includes("duplicate") && !error.message.includes("unique")) {
+    throw new Error(`joinStudyGroup: ${error.message}`);
+  }
+}
+
+export async function leaveStudyGroup(groupId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("study_group_members")
+    .delete()
+    .eq("group_id", groupId)
+    .eq("user_id", userId);
+  if (error) throw new Error(`leaveStudyGroup: ${error.message}`);
+}
+
+export async function getGroupMembers(groupId: string): Promise<StudyGroupMember[]> {
+  const { data, error } = await supabase
+    .from("study_group_members")
+    .select("*, user_profiles(username, display_name, avatar_url, xp, level)")
+    .eq("group_id", groupId)
+    .order("joined_at", { ascending: true });
+  if (error) throw new Error(`getGroupMembers: ${error.message}`);
+  return (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const profile = r.user_profiles as Record<string, unknown> | null;
+    return {
+      groupId: r.group_id as string,
+      userId: r.user_id as string,
+      role: r.role as "owner" | "member",
+      joinedAt: r.joined_at as number,
+      profile: profile
+        ? {
+            username: profile.username as string,
+            displayName: profile.display_name as string,
+            avatarUrl: (profile.avatar_url as string | null) ?? null,
+            xp: profile.xp as number,
+            level: profile.level as number,
+          }
+        : undefined,
+    };
+  });
+}
+
+// ─── Challenges ───────────────────────────────────────────────────────────────
+
+function rowToChallenge(row: Record<string, unknown>): Challenge {
+  return {
+    id: row.id as string,
+    groupId: row.group_id as string,
+    createdBy: row.created_by as string,
+    documentId: (row.document_id as string | null) ?? null,
+    documentTitle: row.document_title as string,
+    difficulty: row.difficulty as QuizDifficultyLevel,
+    questionCount: row.question_count as number,
+    timeLimitMins: row.time_limit_mins as number,
+    status: row.status as "open" | "closed",
+    closesAt: row.closes_at as number,
+    createdAt: row.created_at as number,
+  };
+}
+
+export async function createChallenge(
+  challenge: Pick<Challenge, "id" | "groupId" | "createdBy" | "documentId" | "documentTitle" | "difficulty" | "questionCount" | "timeLimitMins" | "closesAt">,
+): Promise<Challenge> {
+  const { data, error } = await supabase
+    .from("challenges")
+    .insert({
+      id: challenge.id,
+      group_id: challenge.groupId,
+      created_by: challenge.createdBy,
+      document_id: challenge.documentId ?? null,
+      document_title: challenge.documentTitle,
+      difficulty: challenge.difficulty,
+      question_count: challenge.questionCount,
+      time_limit_mins: challenge.timeLimitMins,
+      status: "open",
+      closes_at: challenge.closesAt,
+      created_at: Date.now(),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`createChallenge: ${error.message}`);
+  return rowToChallenge(data as Record<string, unknown>);
+}
+
+export async function getChallenge(challengeId: string): Promise<Challenge | null> {
+  const { data, error } = await supabase
+    .from("challenges")
+    .select("*")
+    .eq("id", challengeId)
+    .maybeSingle();
+  if (error) throw new Error(`getChallenge: ${error.message}`);
+  if (!data) return null;
+  return rowToChallenge(data as Record<string, unknown>);
+}
+
+export async function listGroupChallenges(groupId: string): Promise<Challenge[]> {
+  const { data, error } = await supabase
+    .from("challenges")
+    .select("*")
+    .eq("group_id", groupId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`listGroupChallenges: ${error.message}`);
+  return (data ?? []).map((r) => rowToChallenge(r as Record<string, unknown>));
+}
+
+export async function submitChallengeResult(
+  challengeId: string,
+  userId: string,
+  score: number,
+  timeTakenS: number,
+): Promise<void> {
+  const now = Date.now();
+  const { error } = await supabase.from("challenge_participants").upsert({
+    challenge_id: challengeId,
+    user_id: userId,
+    score,
+    time_taken_s: timeTakenS,
+    submitted_at: now,
+  }, { onConflict: "challenge_id,user_id" });
+  if (error) throw new Error(`submitChallengeResult: ${error.message}`);
+}
+
+export async function getChallengeParticipants(challengeId: string): Promise<ChallengeParticipant[]> {
+  const { data, error } = await supabase
+    .from("challenge_participants")
+    .select("*, user_profiles(username, display_name, avatar_url)")
+    .eq("challenge_id", challengeId)
+    .order("score", { ascending: false });
+  if (error) throw new Error(`getChallengeParticipants: ${error.message}`);
+  return (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const profile = r.user_profiles as Record<string, unknown> | null;
+    return {
+      challengeId: r.challenge_id as string,
+      userId: r.user_id as string,
+      score: (r.score as number | null) ?? null,
+      timeTakenS: (r.time_taken_s as number | null) ?? null,
+      submittedAt: (r.submitted_at as number | null) ?? null,
+      profile: profile
+        ? {
+            username: profile.username as string,
+            displayName: profile.display_name as string,
+            avatarUrl: (profile.avatar_url as string | null) ?? null,
+          }
+        : undefined,
+    };
+  });
+}
+
+export async function closeExpiredChallenges(): Promise<void> {
+  const { error } = await supabase
+    .from("challenges")
+    .update({ status: "closed" })
+    .eq("status", "open")
+    .lt("closes_at", Date.now());
+  if (error) throw new Error(`closeExpiredChallenges: ${error.message}`);
+}
+
+// ─── Race Mode ────────────────────────────────────────────────────────────────
+
+export function generateRoomCode(): string {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function rowToMatchRoom(row: Record<string, unknown>): MatchRoom {
+  return {
+    id: row.id as string,
+    roomCode: row.room_code as string,
+    hostId: row.host_id as string,
+    documentId: (row.document_id as string | null) ?? null,
+    status: row.status as "waiting" | "active" | "completed",
+    quizSnapshot: row.quiz_snapshot as QuizQuestion[],
+    currentQuestionIndex: (row.current_question_index as number) ?? 0,
+    totalQuestions: row.total_questions as number,
+    startedAt: (row.started_at as string | null) ?? null,
+    completedAt: (row.completed_at as string | null) ?? null,
+    createdAt: row.created_at as string,
+  };
+}
+
+function rowToParticipant(row: Record<string, unknown>): MatchParticipant {
+  return {
+    id: row.id as string,
+    roomId: row.room_id as string,
+    userId: row.user_id as string,
+    score: (row.score as number) ?? 0,
+    isReady: (row.is_ready as boolean) ?? false,
+    joinedAt: row.joined_at as string,
+    profile: row.user_profiles
+      ? (() => {
+          const p = row.user_profiles as Record<string, unknown>;
+          return {
+            id: p.id as string,
+            username: p.username as string,
+            displayName: p.display_name as string,
+            avatarUrl: p.avatar_url as string | null,
+          };
+        })()
+      : undefined,
+  };
+}
+
+function rowToAnswer(row: Record<string, unknown>): MatchAnswer {
+  return {
+    id: row.id as string,
+    roomId: row.room_id as string,
+    questionIndex: row.question_index as number,
+    userId: row.user_id as string,
+    answer: row.answer as string,
+    isCorrect: row.is_correct as boolean,
+    gotPoint: (row.got_point as boolean) ?? false,
+    answeredAt: row.answered_at as string,
+  };
+}
+
+// ─── Friends ──────────────────────────────────────────────────────────────────
+
+export async function searchUsers(query: string, excludeUserId: string): Promise<import("./types").UserProfile[]> {
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .ilike("username", `%${query}%`)
+    .neq("id", excludeUserId)
+    .limit(10);
+  if (error) throw new Error(`searchUsers: ${error.message}`);
+  return (data ?? []).map(rowToProfile);
+}
+
+export async function sendFriendRequest(requesterId: string, addresseeId: string): Promise<void> {
+  const { error } = await supabase
+    .from("friendships")
+    .insert({ requester_id: requesterId, addressee_id: addresseeId });
+  if (error) throw new Error(`sendFriendRequest: ${error.message}`);
+}
+
+export async function respondToFriendRequest(
+  requesterId: string,
+  addresseeId: string,
+  accept: boolean
+): Promise<void> {
+  const { error } = await supabase
+    .from("friendships")
+    .update({ status: accept ? "accepted" : "declined" })
+    .eq("requester_id", requesterId)
+    .eq("addressee_id", addresseeId);
+  if (error) throw new Error(`respondToFriendRequest: ${error.message}`);
+}
+
+export async function getFriends(userId: string): Promise<import("./types").UserProfile[]> {
+  const { data, error } = await supabase
+    .from("friendships")
+    .select(`
+      requester_id, addressee_id,
+      requester:user_profiles!friendships_requester_id_fkey(id, username, display_name, avatar_url, xp, level, study_streak, bio, last_active, created_at),
+      addressee:user_profiles!friendships_addressee_id_fkey(id, username, display_name, avatar_url, xp, level, study_streak, bio, last_active, created_at)
+    `)
+    .eq("status", "accepted")
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+  if (error) throw new Error(`getFriends: ${error.message}`);
+  return (data ?? []).map((row) => {
+    const other = (row.requester_id === userId ? row.addressee : row.requester) as unknown as Record<string, unknown>;
+    return rowToProfile(other);
+  });
+}
+
+export async function getPendingRequests(userId: string): Promise<FriendRequest[]> {
+  const { data, error } = await supabase
+    .from("friendships")
+    .select(`id, requester_id, addressee_id, status, created_at, requester:user_profiles!friendships_requester_id_fkey(id, username, display_name, avatar_url)`)
+    .eq("addressee_id", userId)
+    .eq("status", "pending");
+  if (error) throw new Error(`getPendingRequests: ${error.message}`);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    requesterId: row.requester_id,
+    addresseeId: row.addressee_id,
+    status: row.status as "pending",
+    createdAt: row.created_at,
+    requester: row.requester
+      ? (() => {
+          const r = row.requester as unknown as Record<string, unknown>;
+          return {
+            id: r.id as string,
+            username: r.username as string,
+            displayName: r.display_name as string,
+            avatarUrl: r.avatar_url as string | null,
+          };
+        })()
+      : undefined,
+  }));
+}
+
+// ─── Match Rooms ──────────────────────────────────────────────────────────────
+
+export async function createMatch(
+  hostId: string,
+  documentId: string,
+  quizSnapshot: QuizQuestion[]
+): Promise<MatchRoom> {
+  const roomCode = generateRoomCode();
+  const { data, error } = await supabase
+    .from("match_rooms")
+    .insert({
+      room_code: roomCode,
+      host_id: hostId,
+      document_id: documentId,
+      quiz_snapshot: quizSnapshot,
+      total_questions: quizSnapshot.length,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`createMatch: ${error.message}`);
+  await supabase.from("match_participants").insert({ room_id: data.id, user_id: hostId });
+  return rowToMatchRoom(data as Record<string, unknown>);
+}
+
+export async function getMatchByCode(code: string): Promise<MatchRoom | null> {
+  const { data, error } = await supabase
+    .from("match_rooms")
+    .select("*")
+    .eq("room_code", code.toUpperCase())
+    .single();
+  if (error) return null;
+  return rowToMatchRoom(data as Record<string, unknown>);
+}
+
+export async function getMatch(id: string): Promise<MatchRoom | null> {
+  const { data, error } = await supabase
+    .from("match_rooms")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) return null;
+  return rowToMatchRoom(data as Record<string, unknown>);
+}
+
+export async function joinMatch(roomId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("match_participants")
+    .insert({ room_id: roomId, user_id: userId });
+  if (error) throw new Error(`joinMatch: ${error.message}`);
+}
+
+export async function setPlayerReady(roomId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("match_participants")
+    .update({ is_ready: true })
+    .eq("room_id", roomId)
+    .eq("user_id", userId);
+  if (error) throw new Error(`setPlayerReady: ${error.message}`);
+}
+
+export async function startMatch(roomId: string): Promise<void> {
+  const { error } = await supabase
+    .from("match_rooms")
+    .update({ status: "active", started_at: new Date().toISOString() })
+    .eq("id", roomId);
+  if (error) throw new Error(`startMatch: ${error.message}`);
+}
+
+export async function submitAnswer(
+  roomId: string,
+  questionIndex: number,
+  userId: string,
+  answer: string,
+  isCorrect: boolean
+): Promise<{ gotPoint: boolean }> {
+  const { data: existing } = await supabase
+    .from("match_answers")
+    .select("id")
+    .eq("room_id", roomId)
+    .eq("question_index", questionIndex)
+    .eq("got_point", true)
+    .maybeSingle();
+
+  const gotPoint = isCorrect && !existing;
+
+  const { error } = await supabase.from("match_answers").insert({
+    room_id: roomId,
+    question_index: questionIndex,
+    user_id: userId,
+    answer,
+    is_correct: isCorrect,
+    got_point: gotPoint,
+  });
+  if (error) throw new Error(`submitAnswer: ${error.message}`);
+
+  if (gotPoint) {
+    const { data: participant } = await supabase
+      .from("match_participants")
+      .select("score")
+      .eq("room_id", roomId)
+      .eq("user_id", userId)
+      .single();
+    if (participant) {
+      await supabase
+        .from("match_participants")
+        .update({ score: (participant.score ?? 0) + 1 })
+        .eq("room_id", roomId)
+        .eq("user_id", userId);
+    }
+  }
+
+  return { gotPoint };
+}
+
+export async function advanceQuestion(roomId: string): Promise<void> {
+  const { data: room } = await supabase
+    .from("match_rooms")
+    .select("current_question_index, total_questions")
+    .eq("id", roomId)
+    .single();
+  if (!room) return;
+  const next = (room.current_question_index ?? 0) + 1;
+  if (next >= room.total_questions) {
+    await completeMatch(roomId);
+  } else {
+    await supabase.from("match_rooms").update({ current_question_index: next }).eq("id", roomId);
+  }
+}
+
+export async function completeMatch(roomId: string): Promise<void> {
+  const { error } = await supabase
+    .from("match_rooms")
+    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .eq("id", roomId);
+  if (error) throw new Error(`completeMatch: ${error.message}`);
+}
+
+export async function getMatchParticipants(roomId: string): Promise<MatchParticipant[]> {
+  const { data, error } = await supabase
+    .from("match_participants")
+    .select("*, user_profiles(id, username, display_name, avatar_url)")
+    .eq("room_id", roomId);
+  if (error) throw new Error(`getMatchParticipants: ${error.message}`);
+  return (data ?? []).map((row) => rowToParticipant(row as Record<string, unknown>));
+}
+
+export async function getMatchAnswers(roomId: string): Promise<MatchAnswer[]> {
+  const { data, error } = await supabase
+    .from("match_answers")
+    .select("*")
+    .eq("room_id", roomId)
+    .order("answered_at", { ascending: true });
+  if (error) throw new Error(`getMatchAnswers: ${error.message}`);
+  return (data ?? []).map((row) => rowToAnswer(row as Record<string, unknown>));
 }

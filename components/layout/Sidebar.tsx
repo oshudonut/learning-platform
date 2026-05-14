@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Brain,
@@ -14,9 +14,14 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
+  LogOut,
+  LogIn,
+  User,
+  Swords,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const nav = [
   { href: "/", icon: Sparkles, label: "Home", exact: true },
@@ -24,11 +29,20 @@ const nav = [
   { href: "/tutor", icon: MessageSquare, label: "AI Tutor" },
   { href: "/flashcards", icon: Layers, label: "Flashcards" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
+  { href: "/compete", icon: Swords, label: "Compete" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { collapsed, toggle } = useSidebar();
+  const { user, signOut } = useAuth();
+
+  async function handleSignOut() {
+    await signOut();
+    router.push("/auth/login");
+    router.refresh();
+  }
 
   return (
     <aside
@@ -111,6 +125,73 @@ export function Sidebar() {
             </p>
           </div>
         )}
+
+        {/* Auth section */}
+        {user ? (
+          <div className={cn("mb-2", collapsed ? "flex justify-center" : "")}>
+            {collapsed ? (
+              <button
+                onClick={handleSignOut}
+                title="Sign out"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-foreground/5 border border-foreground/10">
+                {/* Avatar */}
+                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-foreground/15 ring-1 ring-foreground/20 overflow-hidden">
+                  {user.user_metadata?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={user.user_metadata.avatar_url as string}
+                      alt="Avatar"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <User className="h-3.5 w-3.5 text-foreground/60" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground truncate">
+                    {(user.user_metadata?.full_name as string | undefined) ??
+                      user.email?.split("@")[0] ??
+                      "User"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground truncate leading-none mt-0.5">
+                    {user.email}
+                  </p>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  title="Sign out"
+                  className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className={cn("mb-2", collapsed ? "flex justify-center" : "")}>
+            <Link href="/auth/login">
+              {collapsed ? (
+                <span
+                  title="Sign in"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all"
+                >
+                  <LogIn className="h-4 w-4" />
+                </span>
+              ) : (
+                <span className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all">
+                  <LogIn className="h-4 w-4 flex-shrink-0" />
+                  <span className="whitespace-nowrap text-xs">Sign in</span>
+                </span>
+              )}
+            </Link>
+          </div>
+        )}
+
         <button
           onClick={toggle}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}

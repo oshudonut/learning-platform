@@ -433,9 +433,182 @@ export type Document = {
   textLength: number;
   contentHash?: string;
   createdAt: number;
+  userId?: string | null;
+  workspaceId?: string | null;
   reviewer?: AnyReviewer;
   quiz?: Quiz;
   flashcards?: Flashcard[];
   flashcardReviewStates?: FlashcardReviewState[];
   chunks?: TextChunk[];
+};
+
+// ─── Competitive / Social ─────────────────────────────────────────────────────
+
+export type UserProfile = {
+  id: string;              // uuid — matches auth.users.id
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  xp: number;
+  level: number;
+  studyStreak: number;
+  lastActive: number | null;
+  createdAt: number;
+};
+
+export type Workspace = {
+  id: string;
+  userId: string;
+  name: string;
+  description: string | null;
+  color: string;           // tailwind color name e.g. "blue", "purple"
+  createdAt: number;
+};
+
+export type StudyGroup = {
+  id: string;
+  ownerId: string;
+  name: string;
+  description: string | null;
+  inviteCode: string;
+  maxMembers: number;
+  createdAt: number;
+  // Joined from study_group_members when fetching group detail
+  memberCount?: number;
+  members?: StudyGroupMember[];
+};
+
+export type StudyGroupMember = {
+  groupId: string;
+  userId: string;
+  role: "owner" | "member";
+  joinedAt: number;
+  profile?: Pick<UserProfile, "username" | "displayName" | "avatarUrl" | "xp" | "level">;
+};
+
+export type BadgeType =
+  | "first_mastery"
+  | "streak_7"
+  | "streak_30"
+  | "challenge_winner"
+  | "speed_demon"
+  | "perfect_score"
+  | "group_founder";
+
+export type Badge = {
+  id: number;
+  userId: string;
+  badgeType: BadgeType;
+  earnedAt: number;
+  metadata: Record<string, unknown>;
+};
+
+export type ChallengeStatus = "open" | "closed";
+
+export type Challenge = {
+  id: string;
+  groupId: string;
+  createdBy: string;
+  documentId: string | null;
+  documentTitle: string;
+  difficulty: QuizDifficultyLevel;
+  questionCount: number;
+  timeLimitMins: number;
+  status: ChallengeStatus;
+  closesAt: number;
+  createdAt: number;
+  // Joined fields
+  participants?: ChallengeParticipant[];
+  mySubmission?: ChallengeParticipant | null;
+};
+
+export type ChallengeParticipant = {
+  challengeId: string;
+  userId: string;
+  score: number | null;
+  timeTakenS: number | null;
+  submittedAt: number | null;
+  profile?: Pick<UserProfile, "username" | "displayName" | "avatarUrl">;
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  xp: number;
+  level: number;
+  studyStreak: number;
+};
+
+export type XpEvent =
+  | "document_uploaded"
+  | "section_completed"
+  | "checkpoint_passed"
+  | "quiz_passed"
+  | "flashcard_session"
+  | "challenge_submitted"
+  | "challenge_won"
+  | "perfect_score";
+
+export const XP_AWARDS: Record<XpEvent, number> = {
+  document_uploaded: 10,
+  section_completed: 5,
+  checkpoint_passed: 15,
+  quiz_passed: 50,
+  flashcard_session: 10,
+  challenge_submitted: 20,
+  challenge_won: 75,
+  perfect_score: 100,
+};
+
+/** XP thresholds per level (level = index + 1). Level 1 starts at 0 XP. */
+export const XP_LEVEL_THRESHOLDS = [0, 100, 250, 500, 1000, 2000, 3500, 5500, 8000, 12000];
+
+// ─── Race Mode / Matchmaking ───────────────────────────────────────────────────
+
+export type FriendRequest = {
+  id: string;
+  requesterId: string;
+  addresseeId: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+  requester?: Pick<UserProfile, "id" | "username" | "displayName" | "avatarUrl">;
+};
+
+export type MatchRoom = {
+  id: string;
+  roomCode: string;
+  hostId: string;
+  documentId: string | null;
+  status: "waiting" | "active" | "completed";
+  quizSnapshot: QuizQuestion[];
+  currentQuestionIndex: number;
+  totalQuestions: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+export type MatchParticipant = {
+  id: string;
+  roomId: string;
+  userId: string;
+  score: number;
+  isReady: boolean;
+  joinedAt: string;
+  profile?: Pick<UserProfile, "id" | "username" | "displayName" | "avatarUrl">;
+};
+
+export type MatchAnswer = {
+  id: string;
+  roomId: string;
+  questionIndex: number;
+  userId: string;
+  answer: string;
+  isCorrect: boolean;
+  gotPoint: boolean;
+  answeredAt: string;
 };
