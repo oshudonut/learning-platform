@@ -345,16 +345,20 @@ function DocumentPageInner() {
                 </span>
               )}
               {progression?.quizUnlocked && doc.hasReviewer && (
-                <a
-                  href={`/api/export?id=${doc.id}`}
-                  download
-                  title="Export reviewer as DOCX"
-                >
-                  <Button variant="outline" size="sm" className="gap-1.5">
-                    <Download className="h-3.5 w-3.5" />
-                    Export
-                  </Button>
-                </a>
+                <div className="flex items-center gap-2">
+                  <a href={`/api/export?id=${doc.id}`} download title="Download reviewer as DOCX">
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <Download className="h-3.5 w-3.5" />
+                      DOCX
+                    </Button>
+                  </a>
+                  <a href={`/api/export/pdf?id=${doc.id}`} download title="Download reviewer as PDF">
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <Download className="h-3.5 w-3.5" />
+                      PDF
+                    </Button>
+                  </a>
+                </div>
               )}
             </div>
           </div>
