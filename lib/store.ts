@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { supabase } from "./supabase";
+import { randomId } from "./utils";
 import type {
   Document,
   Analytics,
@@ -70,6 +71,20 @@ function fromRow(row: Record<string, unknown>): Document {
 export async function saveDocument(doc: Document): Promise<void> {
   const { error } = await supabase.from("documents").upsert(toRow(doc));
   if (error) throw new Error(`saveDocument: ${error.message}`);
+}
+
+export async function copyDocumentForUser(sourceDocId: string, targetUserId: string): Promise<Document> {
+  const source = await getDocument(sourceDocId);
+  if (!source) throw new Error("Source document not found");
+  const copy: Document = {
+    ...source,
+    id: randomId(),
+    userId: targetUserId,
+    createdAt: Date.now(),
+    flashcardReviewStates: undefined,
+  };
+  await saveDocument(copy);
+  return copy;
 }
 
 export async function getDocument(id: string): Promise<Document | null> {
@@ -1070,6 +1085,7 @@ function rowToMatchRoom(row: Record<string, unknown>): MatchRoom {
     roomCode: row.room_code as string,
     hostId: row.host_id as string,
     invitedUserId: (row.invited_user_id as string | null) ?? null,
+    sharedDocumentId: (row.shared_document_id as string | null) ?? null,
     documentId: (row.document_id as string | null) ?? null,
     status: row.status as "waiting" | "active" | "completed",
     quizSnapshot: row.quiz_snapshot as QuizQuestion[],
@@ -1211,7 +1227,8 @@ export async function createMatch(
   hostId: string,
   documentId: string,
   quizSnapshot: QuizQuestion[],
-  invitedUserId?: string
+  invitedUserId?: string,
+  sharedDocumentId?: string
 ): Promise<MatchRoom> {
   const roomCode = generateRoomCode();
   const { data, error } = await supabase
@@ -1223,6 +1240,7 @@ export async function createMatch(
       quiz_snapshot: quizSnapshot,
       total_questions: quizSnapshot.length,
       invited_user_id: invitedUserId ?? null,
+      shared_document_id: sharedDocumentId ?? null,
     })
     .select()
     .single();

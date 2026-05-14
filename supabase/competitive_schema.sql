@@ -43,8 +43,9 @@ CREATE TABLE IF NOT EXISTS match_rooms (
   created_at             timestamptz DEFAULT now()
 );
 
--- Migration: add invited_user_id if table already exists
+-- Migrations: add columns if table already exists
 ALTER TABLE match_rooms ADD COLUMN IF NOT EXISTS invited_user_id uuid REFERENCES user_profiles(id) ON DELETE SET NULL;
+ALTER TABLE match_rooms ADD COLUMN IF NOT EXISTS shared_document_id text;
 
 CREATE INDEX IF NOT EXISTS match_rooms_room_code_idx        ON match_rooms(room_code);
 CREATE INDEX IF NOT EXISTS match_rooms_host_id_idx          ON match_rooms(host_id);

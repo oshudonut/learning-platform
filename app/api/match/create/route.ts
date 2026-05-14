@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
-import { getDocument, createMatch, ensureUserProfile } from "@/lib/store";
+import { getDocument, createMatch, copyDocumentForUser, ensureUserProfile } from "@/lib/store";
 
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServer();
@@ -22,6 +22,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Document has no quiz questions. Generate the quiz first." }, { status: 400 });
   }
 
-  const match = await createMatch(user.id, documentId, questions, invitedUserId);
+  // Copy the document into the invited user's library so they can study it
+  const sharedDoc = await copyDocumentForUser(documentId, invitedUserId);
+
+  const match = await createMatch(user.id, documentId, questions, invitedUserId, sharedDoc.id);
   return NextResponse.json({ match });
 }

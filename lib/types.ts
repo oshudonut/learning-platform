@@ -583,6 +583,7 @@ export type MatchRoom = {
   roomCode: string;
   hostId: string;
   invitedUserId: string | null;
+  sharedDocumentId: string | null;
   documentId: string | null;
   status: "waiting" | "active" | "completed";
   quizSnapshot: QuizQuestion[];

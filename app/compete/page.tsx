@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Swords, Users, UserPlus, Check, X, Search, ChevronRight, BookOpen } from "lucide-react";
+import { Swords, Users, UserPlus, Check, X, Search, BookOpen, ExternalLink } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { UserProfile, FriendRequest, MatchRoom } from "@/lib/types";
@@ -208,29 +208,43 @@ export default function CompetePage() {
                 </h2>
                 <div className="space-y-3">
                   {invitations.map((inv) => (
-                    <div key={inv.id} className="flex items-center justify-between gap-3 rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          {inv.hostProfile?.displayName ?? "Someone"} challenged you!
-                        </p>
-                        <p className="text-xs text-gray-400 mt-0.5">{inv.totalQuestions} questions</p>
+                    <div key={inv.id} className="rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-3 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-white">
+                            {inv.hostProfile?.displayName ?? "Someone"} challenged you!
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">{inv.totalQuestions} questions</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => handleAccept(inv)}
+                            disabled={acceptingId === inv.id}
+                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium transition-colors"
+                          >
+                            {acceptingId === inv.id ? "Joining..." : <><Check className="h-3.5 w-3.5" /> Accept</>}
+                          </button>
+                          <button
+                            onClick={() => handleDecline(inv)}
+                            disabled={decliningId === inv.id}
+                            className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 text-red-400 transition-colors"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => handleAccept(inv)}
-                          disabled={acceptingId === inv.id}
-                          className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium transition-colors"
+                      {inv.sharedDocumentId && (
+                        <a
+                          href={`/document/${inv.sharedDocumentId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors"
                         >
-                          {acceptingId === inv.id ? "Joining..." : <><Check className="h-3.5 w-3.5" /> Accept</>}
-                        </button>
-                        <button
-                          onClick={() => handleDecline(inv)}
-                          disabled={decliningId === inv.id}
-                          className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 text-red-400 transition-colors"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                          <BookOpen className="h-3.5 w-3.5" />
+                          Study the document before accepting
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>
