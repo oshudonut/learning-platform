@@ -557,10 +557,11 @@ function rowToProfile(row: Record<string, unknown>): UserProfile {
 
 export async function ensureUserProfile(userId: string, email: string): Promise<void> {
   const username = email.split("@")[0] + "_" + userId.slice(0, 6);
-  await supabase.from("user_profiles").upsert(
+  const { error } = await supabase.from("user_profiles").upsert(
     { id: userId, username, display_name: email.split("@")[0] },
     { onConflict: "id", ignoreDuplicates: true }
   );
+  if (error) throw new Error(`ensureUserProfile: ${error.message}`);
 }
 
 export async function getProfile(userId: string): Promise<UserProfile | null> {
@@ -1219,7 +1220,10 @@ export async function createMatch(
     .select()
     .single();
   if (error) throw new Error(`createMatch: ${error.message}`);
-  await supabase.from("match_participants").insert({ room_id: data.id, user_id: hostId });
+  const { error: participantError } = await supabase
+    .from("match_participants")
+    .insert({ room_id: data.id, user_id: hostId });
+  if (participantError) throw new Error(`createMatch participant: ${participantError.message}`);
   return rowToMatchRoom(data as Record<string, unknown>);
 }
 
@@ -1339,7 +1343,7 @@ export async function completeMatch(roomId: string): Promise<void> {
 export async function getMatchParticipants(roomId: string): Promise<MatchParticipant[]> {
   const { data, error } = await supabase
     .from("match_participants")
-    .select("*, user_profiles(id, username, display_name, avatar_url)")
+    .select("*, user_profiles!left(id, username, display_name, avatar_url)")
     .eq("room_id", roomId);
   if (error) throw new Error(`getMatchParticipants: ${error.message}`);
   return (data ?? []).map((row) => rowToParticipant(row as Record<string, unknown>));
