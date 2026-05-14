@@ -82,12 +82,23 @@ export default function MatchPage() {
   }, [fetchState]);
 
   // While waiting for opponent: poll every 3 s so the lobby always reflects
-  // the latest participant list even if the Realtime event was missed.
+  // the latest participant list and status, even if Realtime events are missed.
+  // This catches the waiting→active transition so the host doesn't get stuck.
   useEffect(() => {
-    if (!match || match.status !== "waiting") return;
+    if (!match) return;
+    if (match.status !== "waiting") return;
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
   }, [match?.status, fetchState]);
+
+  // When a new participant joins (Realtime INSERT), immediately re-fetch so the
+  // host sees them and — crucially — catches any immediate status change.
+  useEffect(() => {
+    if (participants.length >= 2) {
+      fetchState();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participants.length]);
 
   // Clear answer UI when question advances
   useEffect(() => {
