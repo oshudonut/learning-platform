@@ -54,6 +54,8 @@ export default function MatchPage() {
   const [answerResult, setAnswerResult] = useState<AnswerResult>(null);
   const [submitting, setSubmitting] = useState(false);
   const answeredQuestions = useRef<Set<number>>(new Set());
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
 
   // ── fetchState — used for initial load + post-answer score sync ──────────────
   const fetchState = useCallback(async () => {
@@ -81,23 +83,40 @@ export default function MatchPage() {
   // Keep the ref in sync so useMatchRealtime always calls the latest fetchState
   fetchStateRef.current = fetchState;
 
-  // Auto-join: if the current user is the invited user but not yet a participant
-  // (e.g., ChallengeProvider join call failed, or user navigated directly to the URL),
-  // silently join them so they appear in the lobby.
+  // handleJoin — used by both auto-join (silent) and the explicit "Join Match" button.
+  const handleJoin = useCallback(async () => {
+    setJoining(true);
+    setJoinError(null);
+    try {
+      const r = await fetch(`/api/match/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: params.id }),
+      });
+      if (r.ok) {
+        await fetchState();
+      } else {
+        const data = await r.json().catch(() => ({}));
+        setJoinError(data.error ?? `Could not join (HTTP ${r.status})`);
+      }
+    } catch {
+      setJoinError("Network error — please try again");
+    } finally {
+      setJoining(false);
+    }
+  }, [params.id, fetchState]);
+
+  // Auto-join on page load: attempt silently if the user is not yet a participant.
   const hasAutoJoinedRef = useRef(false);
   useEffect(() => {
     if (!match || !user) return;
     if (hasAutoJoinedRef.current) return;
+    if (match.status !== "waiting") return;
     const alreadyIn = participants.some((p) => p.userId === user.id);
-    if (!alreadyIn && match.invitedUserId === user.id && match.status === "waiting") {
-      hasAutoJoinedRef.current = true;
-      fetch(`/api/match/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchId: params.id }),
-      }).then((r) => { if (r.ok) fetchState(); }).catch(() => {});
-    }
-  }, [match, participants, user, params.id, fetchState]);
+    if (alreadyIn) return;
+    hasAutoJoinedRef.current = true;
+    handleJoin();
+  }, [match, participants, user, handleJoin]);
 
   // Single fetch on mount — realtime takes over from here
   useEffect(() => {
@@ -209,6 +228,9 @@ export default function MatchPage() {
             me={me}
             onReady={handleReady}
             readying={readying}
+            onJoin={handleJoin}
+            joining={joining}
+            joinError={joinError}
           />
         )}
         {match.status === "active" && (
@@ -247,12 +269,18 @@ function LobbyView({
   me,
   onReady,
   readying,
+  onJoin,
+  joining,
+  joinError,
 }: {
   match: MatchRoom;
   participants: MatchParticipant[];
   me?: MatchParticipant;
   onReady: () => void;
   readying: boolean;
+  onJoin: () => void;
+  joining: boolean;
+  joinError: string | null;
 }) {
   const slots: (MatchParticipant | undefined)[] = [
     participants[0],
@@ -319,21 +347,37 @@ function LobbyView({
           {match.totalQuestions} question{match.totalQuestions !== 1 ? "s" : ""} &middot; First correct answer wins each point
         </p>
 
-        <button
-          onClick={onReady}
-          disabled={readying || !!me?.isReady}
-          className="w-full max-w-xs mx-auto rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 transition-colors flex items-center justify-center gap-2"
-        >
-          {me?.isReady ? (
-            <>
-              <Check className="h-4 w-4" /> You&apos;re Ready!
-            </>
-          ) : readying ? (
-            "Readying up..."
-          ) : (
-            "Ready Up"
-          )}
-        </button>
+        {/* If this user is not yet a participant, show join button instead of ready */}
+        {!me ? (
+          <div className="space-y-2">
+            <button
+              onClick={onJoin}
+              disabled={joining}
+              className="w-full max-w-xs mx-auto rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 transition-colors flex items-center justify-center gap-2"
+            >
+              {joining ? "Joining..." : "Join Match"}
+            </button>
+            {joinError && (
+              <p className="text-xs text-red-400 text-center">{joinError}</p>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={onReady}
+            disabled={readying || !!me?.isReady}
+            className="w-full max-w-xs mx-auto rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 transition-colors flex items-center justify-center gap-2"
+          >
+            {me?.isReady ? (
+              <>
+                <Check className="h-4 w-4" /> You&apos;re Ready!
+              </>
+            ) : readying ? (
+              "Readying up..."
+            ) : (
+              "Ready Up"
+            )}
+          </button>
+        )}
 
         <p className="text-xs text-gray-500 mt-3">
           Game starts automatically when both players are ready
