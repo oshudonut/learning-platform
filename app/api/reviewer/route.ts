@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
-import { REVIEWER_TASK, SYSTEM_PREAMBLE, buildAdaptiveReviewerTask } from "@/lib/prompts";
+import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig } from "@/lib/prompts";
 import { getDocument, updateDocument, computeContentHash, getProgression } from "@/lib/store";
-import { ReviewerSchema } from "@/lib/types";
-import type { LearningMethod, StudyMode } from "@/lib/types";
+import {
+  ReviewerSchema,
+  ConceptualReviewerSchema,
+  RetrievalReviewerSchema,
+  MemoryReviewerSchema,
+  RelationalReviewerSchema,
+} from "@/lib/types";
+import type { LearningMethod, StudyMode, ReviewerSchemaType } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
+
+const SCHEMA_MAP = {
+  standard: ReviewerSchema,
+  conceptual: ConceptualReviewerSchema,
+  retrieval: RetrievalReviewerSchema,
+  memory: MemoryReviewerSchema,
+  relational: RelationalReviewerSchema,
+} as const satisfies Record<ReviewerSchemaType, unknown>;
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,7 +51,6 @@ export async function POST(req: NextRequest) {
 
     const compressed = compressDocumentForReview(doc.text);
 
-    // Use saved learning profile from progression if not passed directly
     let resolvedMethod = learningMethod;
     let resolvedMode = studyMode;
     if (!resolvedMethod || !resolvedMode) {
@@ -46,24 +59,35 @@ export async function POST(req: NextRequest) {
       resolvedMode = resolvedMode ?? progression?.studyMode ?? undefined;
     }
 
-    const taskInstruction = resolvedMethod && resolvedMode
-      ? buildAdaptiveReviewerTask(resolvedMethod, resolvedMode)
-      : REVIEWER_TASK;
+    let taskInstruction = REVIEWER_TASK;
+    let systemPreamble = SYSTEM_PREAMBLE;
+    let schemaType: ReviewerSchemaType = "standard";
+
+    if (resolvedMethod && resolvedMode) {
+      const config = getMethodologyConfig(resolvedMethod, resolvedMode);
+      taskInstruction = config.taskInstruction;
+      systemPreamble = config.systemPreamble;
+      schemaType = config.schemaType;
+    }
+
+    const schema = SCHEMA_MAP[schemaType];
 
     const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
-      schema: ReviewerSchema,
-      systemPreamble: SYSTEM_PREAMBLE,
+      schema,
+      systemPreamble,
       documentText: doc.text,
       compressedText: compressed,
       taskInstruction,
-      maxTokens: 3000,
+      maxTokens: schemaType === "standard" ? 3000 : 3500,
     });
 
-    await updateDocument(id, { reviewer: parsed, contentHash: incomingHash });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await updateDocument(id, { reviewer: parsed as any, contentHash: incomingHash });
 
     return NextResponse.json({
       reviewer: parsed,
       cached: false,
+      schemaType,
       usage: { cacheReadTokens, cacheWriteTokens },
     });
   } catch (err: unknown) {

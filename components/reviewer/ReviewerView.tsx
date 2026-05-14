@@ -25,7 +25,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Reviewer, ReviewerTopic, DocumentProgression, LearningMethod, StudyMode } from "@/lib/types";
+import type { AnyReviewer, Reviewer, ReviewerTopic, DocumentProgression, LearningMethod, StudyMode } from "@/lib/types";
+import { ConceptualReviewerView } from "./views/ConceptualReviewerView";
+import { RetrievalReviewerView } from "./views/RetrievalReviewerView";
+import { MemoryReviewerView } from "./views/MemoryReviewerView";
+import { RelationalReviewerView } from "./views/RelationalReviewerView";
 
 // ─── Per-method display configuration ────────────────────────────────────────
 
@@ -511,7 +515,7 @@ export function ReviewerView({
   onSectionComplete,
   onStartFlashcards,
 }: {
-  reviewer: Reviewer;
+  reviewer: AnyReviewer;
   progression?: DocumentProgression;
   documentId?: string;
   learningMethod?: LearningMethod | null;
@@ -519,7 +523,26 @@ export function ReviewerView({
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
 }) {
-  const total = reviewer.topics.length;
+  // Dispatch to methodology-specific viewers based on reviewer type
+  if ("type" in reviewer) {
+    const sharedProps = { progression, learningMethod, studyMode, onSectionComplete, onStartFlashcards };
+    if (reviewer.type === "conceptual") {
+      return <ConceptualReviewerView reviewer={reviewer} {...sharedProps} />;
+    }
+    if (reviewer.type === "retrieval") {
+      return <RetrievalReviewerView reviewer={reviewer} {...sharedProps} />;
+    }
+    if (reviewer.type === "memory") {
+      return <MemoryReviewerView reviewer={reviewer} {...sharedProps} />;
+    }
+    if (reviewer.type === "relational") {
+      return <RelationalReviewerView reviewer={reviewer} {...sharedProps} />;
+    }
+  }
+
+  // Standard reviewer (legacy / board-exam style)
+  const standardReviewer = reviewer as Reviewer;
+  const total = standardReviewer.topics.length;
   const completedCount = progression?.sectionStatuses.filter((s) => s.completed).length ?? 0;
   const allComplete = completedCount === total && total > 0;
 
@@ -540,7 +563,7 @@ export function ReviewerView({
   if (allComplete && !progression?.flashcardChallengeCompleted) {
     return (
       <ReviewerCompleteScreen
-        reviewer={reviewer}
+        reviewer={standardReviewer}
         onStartFlashcards={() => onStartFlashcards?.()}
       />
     );
@@ -561,7 +584,7 @@ export function ReviewerView({
     );
   }
 
-  const topic = reviewer.topics[currentIdx];
+  const topic = standardReviewer.topics[currentIdx];
   if (!topic) return null;
 
   async function handleMarkComplete() {
@@ -678,7 +701,7 @@ export function ReviewerView({
                 </span>
               </div>
               <div className="space-y-1.5">
-                {reviewer.topics.slice(0, currentIdx).map((t, i) => (
+                {standardReviewer.topics.slice(0, currentIdx).map((t, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
                     <div className="h-1.5 w-1.5 rounded-full bg-success flex-shrink-0" />
                     {t.title}
@@ -689,7 +712,7 @@ export function ReviewerView({
           )}
 
           {/* Global Must Memorize — shown only on the last section */}
-          {currentIdx === total - 1 && reviewer.globalMustMemorize.length > 0 && (
+          {currentIdx === total - 1 && standardReviewer.globalMustMemorize.length > 0 && (
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Target className="h-4 w-4 text-amber-400" />
@@ -697,7 +720,7 @@ export function ReviewerView({
                 <Badge variant="warning" className="ml-auto">High Yield</Badge>
               </div>
               <ul className="space-y-2.5">
-                {reviewer.globalMustMemorize.map((fact, i) => (
+                {standardReviewer.globalMustMemorize.map((fact, i) => (
                   <li key={i} className="flex items-start gap-3 text-sm">
                     <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-bold text-amber-400">
                       {i + 1}
@@ -710,14 +733,14 @@ export function ReviewerView({
           )}
 
           {/* Mnemonics — shown only on the last section */}
-          {currentIdx === total - 1 && reviewer.mnemonics.length > 0 && (
+          {currentIdx === total - 1 && standardReviewer.mnemonics.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Lightbulb className="h-4 w-4 text-primary" />
                 <h3 className="font-semibold text-foreground">Memory Aids</h3>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                {reviewer.mnemonics.map((m, i) => (
+                {standardReviewer.mnemonics.map((m, i) => (
                   <div key={i} className="rounded-xl border border-border bg-card p-4 space-y-1.5">
                     <div className="flex items-center gap-2">
                       <Star className="h-3.5 w-3.5 text-primary flex-shrink-0" />

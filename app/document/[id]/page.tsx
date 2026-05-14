@@ -25,7 +25,7 @@ import { QuizEngine } from "@/components/quiz/QuizEngine";
 import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
 import { TutorChat } from "@/components/tutor/TutorChat";
 import { Button } from "@/components/ui/button";
-import type { Reviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode } from "@/lib/types";
+import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Tab = "review" | "quiz" | "flashcards" | "tutor";
@@ -113,7 +113,7 @@ function DocumentPageInner() {
   const [doc, setDoc] = useState<DocMeta | null>(null);
   const [docLoading, setDocLoading] = useState(true);
 
-  const [reviewer, setReviewer] = useState<LoadState<Reviewer>>({ status: "idle" });
+  const [reviewer, setReviewer] = useState<LoadState<AnyReviewer>>({ status: "idle" });
   const [quiz, setQuiz] = useState<LoadState<{ questions: ExtendedQuizQuestion[] }>>({ status: "idle" });
   const [flashcards, setFlashcards] = useState<LoadState<Flashcard[]>>({ status: "idle" });
   const [progression, setProgression] = useState<DocumentProgression | null>(null);

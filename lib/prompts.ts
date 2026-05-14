@@ -143,7 +143,8 @@ Draw from this material when relevant, but feel free to go beyond it to provide 
 
 // ─── Adaptive Reviewer task ───────────────────────────────────────────────────
 
-import type { LearningMethod, StudyMode, QuizDifficultyLevel } from "./types";
+import type { LearningMethod, StudyMode, QuizDifficultyLevel, ReviewerSchemaType } from "./types";
+import { METHOD_SCHEMA_MAP } from "./types";
 
 const METHOD_INSTRUCTIONS: Record<LearningMethod, string> = {
   feynman: "Use plain-language explanations as if teaching a beginner. Lead every topic with a simple analogy. Replace jargon with everyday equivalents. Make the explanation so clear a non-expert could understand it.",
@@ -184,6 +185,281 @@ Apply BOTH the learning method style AND the study mode depth to every section. 
 ${REVIEWER_TASK}
 
 CRITICAL: The method instructions above take priority over the generic field descriptions. For example, if the method says "open each topic with a Blurt Challenge in coreIdea", do that — even if the generic schema says coreIdea is "ONE sentence". The JSON field names must stay the same, but the content style follows the method. Do not mention these instructions in the output.`;
+}
+
+// ─── Adaptive system preamble (for non-standard reviewers) ──────────────────
+
+export const ADAPTIVE_SYSTEM_PREAMBLE = `You are an adaptive AI learning engine that transforms source material into a methodology-specific learning experience.
+
+Rules you never break:
+- Output ONLY valid JSON. No markdown fences, no explanation, no preamble.
+- Follow the exact JSON structure specified in the task.
+- The methodology dictates structure and tone — do not fall back to generic summarization.
+- Make every field genuinely useful for that specific learning method.`;
+
+// ─── Schema-specific task builders ───────────────────────────────────────────
+
+function buildConceptualTask(method: LearningMethod, mode: StudyMode): string {
+  const methodLabel = method === "feynman" ? "Feynman Technique"
+    : method === "elaboration" ? "Elaboration"
+    : "Multisensory Learning";
+
+  const modeNote = mode === "cram"
+    ? "Keep analogies concise. Focus only on the most critical concepts."
+    : mode === "board_exam"
+    ? "Frame analogies and explanations around clinical scenarios and exam reasoning."
+    : mode === "mastery"
+    ? "Go deep. Full mechanism chains, edge-case self-check questions."
+    : "Balance clarity and depth. Build genuine conceptual models.";
+
+  return `Generate a conceptual deep-understanding reviewer using the ${methodLabel} method.
+
+GOAL: The student should UNDERSTAND — not just memorize. Every section should feel like a wise tutor explaining from first principles. ${modeNote}
+
+Return EXACTLY this JSON (no extra fields, no markdown):
+{
+  "type": "conceptual",
+  "title": "concise document title",
+  "summary": "2 sentences MAX — what this material covers and why it matters",
+  "topics": [
+    {
+      "title": "topic name",
+      "analogy": "A vivid, specific real-world analogy: 'Think of X like Y because...' — must be concrete, not generic",
+      "simplifiedExplanation": "2-4 sentences in plain language. No jargon. Explain to a smart 14-year-old. No bullet points — flowing prose only.",
+      "mechanism": [
+        "Step 1 cause → effect (use → arrows to show causation or sequence)",
+        "Step 2 → next step → consequence",
+        "3-5 chain steps total"
+      ],
+      "keyTakeaways": ["What the student must walk away knowing — short phrase", "3-5 items"],
+      "selfCheck": [
+        "Can you explain ___ back in your own words?",
+        "What would happen if ___?",
+        "2-4 genuine comprehension questions"
+      ]
+    }
+  ],
+  "bigPicture": "2-3 sentences — how ALL the topics connect to each other and why the whole document matters together"
+}
+
+Hard constraints:
+- topics: 3-6 covering the main concepts
+- analogy: Must be specific and vivid — "Think of X like Y because Z" pattern
+- simplifiedExplanation: Flowing prose, NO bullet points inside it, NO jargon
+- mechanism: Use → arrows throughout, show causation not just sequence
+- selfCheck: Real comprehension questions, not recall prompts
+- bigPicture: Must synthesize ALL topics — do not repeat topic summaries`;
+}
+
+function buildRetrievalTask(method: LearningMethod, mode: StudyMode): string {
+  const methodLabel = method === "blurting" ? "Blurting"
+    : method === "sq3r" ? "SQ3R"
+    : method === "pq4r" ? "PQ4R"
+    : "Active Recall";
+
+  const modeNote = mode === "cram"
+    ? "Focus on highest-yield testable facts. 3-4 sharp questions per topic."
+    : mode === "board_exam"
+    ? "Questions should mirror board-exam vignette style and common traps."
+    : mode === "mastery"
+    ? "Include edge-case and application questions, not just definition recall."
+    : "Mix definition, mechanism, and application questions.";
+
+  return `Generate a retrieval-practice reviewer using the ${methodLabel} method.
+
+GOAL: Force the student to actively RECALL before reading. Every topic starts with a recall challenge. Answers are revealed AFTER the attempt. ${modeNote}
+
+Return EXACTLY this JSON (no extra fields, no markdown):
+{
+  "type": "retrieval",
+  "title": "concise document title",
+  "summary": "2 sentences MAX",
+  "topics": [
+    {
+      "title": "topic name",
+      "blurtPrompt": "Close the screen. Write down EVERYTHING you know about '[specific topic name]'. You have 60 seconds. Do it before reading anything below.",
+      "questions": [
+        {
+          "q": "Specific retrieval question that tests genuine recall",
+          "hint": "Optional one-word or short-phrase nudge (omit for easy questions)",
+          "answer": "The complete accurate answer — 1-3 sentences"
+        }
+      ],
+      "keyFacts": ["Testable fact in short phrase format", "3-5 items"],
+      "commonMistakes": ["A real misconception students make about this topic", "1-3 items"]
+    }
+  ],
+  "finalChallenge": [
+    "Cross-topic synthesis question that requires connecting multiple sections",
+    "3-5 questions spanning the whole document"
+  ]
+}
+
+Hard constraints:
+- topics: 3-6 covering the main concepts
+- blurtPrompt: Must name the specific topic, not be generic
+- questions: 3-5 per topic, ordered easy → hard
+- hint: Include ONLY for harder questions — never give away the answer
+- answer: Accurate, complete, 1-3 sentences
+- commonMistakes: Real misconceptions, not obvious wrong answers
+- finalChallenge: Must require knowledge from multiple topics`;
+}
+
+function buildMemoryTask(method: LearningMethod, mode: StudyMode): string {
+  const methodLabel = method === "mnemonic" ? "Mnemonic Techniques"
+    : method === "leitner" ? "Leitner System"
+    : "Spaced Repetition";
+
+  const modeNote = mode === "cram"
+    ? "HIGH priority for everything — all facts need strong anchors. Review in = 'tomorrow'."
+    : mode === "board_exam"
+    ? "Anchors should help distinguish board-tested facts. Prioritize numerical thresholds and clinical pearls."
+    : mode === "mastery"
+    ? "Build anchors for nuance and edge cases too, not just core facts."
+    : "Balance priorities. Focus anchors on the genuinely hard-to-remember facts.";
+
+  return `Generate a memory-optimization reviewer using the ${methodLabel} method.
+
+GOAL: Every important fact gets a concrete MEMORY ANCHOR — an acronym, rhyme, vivid story, or association that makes it impossible to forget. ${modeNote}
+
+Return EXACTLY this JSON (no extra fields, no markdown):
+{
+  "type": "memory",
+  "title": "concise document title",
+  "summary": "2 sentences MAX",
+  "topics": [
+    {
+      "title": "topic name",
+      "coreIdea": "One sentence — the essential concept for this topic",
+      "anchors": [
+        {
+          "fact": "The exact fact, formula, or definition to memorize",
+          "anchor": "ACRONYM: [spell it out] OR Rhyme: [actual rhyme] OR Story: [vivid 1-sentence story] OR Image: [vivid mental picture]",
+          "priority": "HIGH",
+          "reviewIn": "tomorrow"
+        }
+      ],
+      "associations": [
+        {
+          "concept": "concept name",
+          "trick": "The memorable hook, visual, or association — must be specific and vivid"
+        }
+      ]
+    }
+  ],
+  "masterAnchors": [
+    {
+      "fact": "Most critical cross-topic high-yield fact",
+      "anchor": "The specific memory device",
+      "priority": "HIGH",
+      "reviewIn": "tomorrow"
+    }
+  ]
+}
+
+Hard constraints:
+- topics: 3-6 covering the main concepts
+- anchors: 3-5 per topic — only for facts genuinely hard to remember
+- anchor field: Must be a SPECIFIC device — spell out the acronym, write the actual rhyme, describe the actual story
+- priority HIGH → reviewIn "tomorrow", MEDIUM → "3 days", LOW → "1 week"
+- associations: 2-4 per topic — vivid hooks for concepts, not restatements of the fact
+- masterAnchors: 5-8 highest-yield cross-topic facts with strong anchors
+- Do NOT generate generic descriptions like "use a mnemonic" — generate the actual mnemonic`;
+}
+
+function buildRelationalTask(method: LearningMethod, mode: StudyMode): string {
+  const methodLabel = method === "mind_maps" ? "Mind Mapping" : "Interleaving";
+
+  const modeNote = mode === "cram"
+    ? "Focus on the most critical connections only. Keep nodes and links minimal but high-yield."
+    : mode === "board_exam"
+    ? "Highlight connections that explain exam traps. Cross-links should reflect clinical decision trees."
+    : mode === "mastery"
+    ? "Map full depth — subtopics, dependencies, exceptions. Build a complete knowledge graph."
+    : "Map core connections. Emphasize what students commonly mix up.";
+
+  return `Generate a relationship-mapping reviewer using the ${methodLabel} method.
+
+GOAL: Map how concepts CONNECT, CONTRAST, and DEPEND on each other. This is a knowledge network, not a summary. The student should see the architecture of ideas. ${modeNote}
+
+Return EXACTLY this JSON (no extra fields, no markdown):
+{
+  "type": "relational",
+  "title": "concise document title",
+  "summary": "2 sentences MAX",
+  "topics": [
+    {
+      "title": "topic name",
+      "centralConcept": "The core idea this topic revolves around — one short sentence",
+      "nodes": [
+        {
+          "concept": "sub-concept or related idea",
+          "children": ["what this concept leads to, includes, or produces", "1-3 items"],
+          "relatedTopics": ["name of another topic in this document that this connects to", "1-2 items"]
+        }
+      ],
+      "crossLinks": [
+        {
+          "from": "a concept or topic",
+          "via": "specific relationship verb (causes, requires, opposes, enables, differentiates, predicts, etc.)",
+          "to": "a concept in a DIFFERENT topic"
+        }
+      ],
+      "contrastsWith": [
+        {
+          "topic": "similar concept or term students confuse with this",
+          "keyDifference": "The single most important distinction — one precise sentence"
+        }
+      ]
+    }
+  ],
+  "conceptMap": [
+    {
+      "from": "topic or concept name",
+      "relationship": "specific verb phrase",
+      "to": "another topic or concept name"
+    }
+  ]
+}
+
+Hard constraints:
+- topics: 3-6 covering the main concepts
+- nodes: 3-5 per topic — sub-concepts that radiate from the central concept
+- crossLinks: CROSS-TOPIC connections ONLY — links within one topic go in nodes.children
+- relationship verbs: Be specific — not "relates to", use "causes", "inhibits", "requires", "differentiates", etc.
+- contrastsWith: Common confusion pairs — include only where genuine mix-up risk exists
+- conceptMap: 5-8 global connections spanning multiple topics`;
+}
+
+export function getMethodologyConfig(method: LearningMethod, mode: StudyMode): {
+  taskInstruction: string;
+  schemaType: ReviewerSchemaType;
+  systemPreamble: string;
+} {
+  const schemaType = METHOD_SCHEMA_MAP[method];
+  let taskInstruction: string;
+
+  switch (schemaType) {
+    case "conceptual":
+      taskInstruction = buildConceptualTask(method, mode);
+      break;
+    case "retrieval":
+      taskInstruction = buildRetrievalTask(method, mode);
+      break;
+    case "memory":
+      taskInstruction = buildMemoryTask(method, mode);
+      break;
+    case "relational":
+      taskInstruction = buildRelationalTask(method, mode);
+      break;
+    default: {
+      const modeName = mode.replace(/_/g, " ").toUpperCase();
+      taskInstruction = `${METHOD_INSTRUCTIONS[method]}\n\nSTUDY MODE — ${modeName}:\n${MODE_INSTRUCTIONS[mode]}\n\n${REVIEWER_TASK}`;
+    }
+  }
+
+  const systemPreamble = schemaType === "standard" ? SYSTEM_PREAMBLE : ADAPTIVE_SYSTEM_PREAMBLE;
+  return { taskInstruction, schemaType, systemPreamble };
 }
 
 // ─── Checkpoint Flashcard task ────────────────────────────────────────────────

@@ -35,6 +35,127 @@ export type ConfusedWith = z.infer<typeof ConfusedWithSchema>;
 export type ReviewerTopic = z.infer<typeof ReviewerTopicSchema>;
 export type Reviewer = z.infer<typeof ReviewerSchema>;
 
+// ─── Adaptive Reviewer Schema Families ───────────────────────────────────────
+
+// Conceptual: Feynman, Elaboration, Multisensory
+export const ConceptualTopicSchema = z.object({
+  title: z.string(),
+  analogy: z.string(),
+  simplifiedExplanation: z.string(),
+  mechanism: z.array(z.string()),
+  keyTakeaways: z.array(z.string()),
+  selfCheck: z.array(z.string()),
+});
+export const ConceptualReviewerSchema = z.object({
+  type: z.literal("conceptual"),
+  title: z.string(),
+  summary: z.string(),
+  topics: z.array(ConceptualTopicSchema).min(3).max(6),
+  bigPicture: z.string(),
+});
+export type ConceptualTopic = z.infer<typeof ConceptualTopicSchema>;
+export type ConceptualReviewer = z.infer<typeof ConceptualReviewerSchema>;
+
+// Retrieval: Active Recall, Blurting, SQ3R, PQ4R
+export const RetrievalQuestionSchema = z.object({
+  q: z.string(),
+  hint: z.string().optional(),
+  answer: z.string(),
+});
+export const RetrievalTopicSchema = z.object({
+  title: z.string(),
+  blurtPrompt: z.string(),
+  questions: z.array(RetrievalQuestionSchema),
+  keyFacts: z.array(z.string()),
+  commonMistakes: z.array(z.string()),
+});
+export const RetrievalReviewerSchema = z.object({
+  type: z.literal("retrieval"),
+  title: z.string(),
+  summary: z.string(),
+  topics: z.array(RetrievalTopicSchema).min(3).max(6),
+  finalChallenge: z.array(z.string()),
+});
+export type RetrievalQuestion = z.infer<typeof RetrievalQuestionSchema>;
+export type RetrievalTopic = z.infer<typeof RetrievalTopicSchema>;
+export type RetrievalReviewer = z.infer<typeof RetrievalReviewerSchema>;
+
+// Memory: Mnemonic, Spaced Repetition, Leitner
+export const MemoryAnchorSchema = z.object({
+  fact: z.string(),
+  anchor: z.string(),
+  priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
+  reviewIn: z.string().optional(),
+});
+export const MemoryAssociationSchema = z.object({
+  concept: z.string(),
+  trick: z.string(),
+});
+export const MemoryTopicSchema = z.object({
+  title: z.string(),
+  coreIdea: z.string(),
+  anchors: z.array(MemoryAnchorSchema),
+  associations: z.array(MemoryAssociationSchema),
+});
+export const MemoryReviewerSchema = z.object({
+  type: z.literal("memory"),
+  title: z.string(),
+  summary: z.string(),
+  topics: z.array(MemoryTopicSchema).min(3).max(6),
+  masterAnchors: z.array(MemoryAnchorSchema),
+});
+export type MemoryAnchor = z.infer<typeof MemoryAnchorSchema>;
+export type MemoryTopic = z.infer<typeof MemoryTopicSchema>;
+export type MemoryReviewer = z.infer<typeof MemoryReviewerSchema>;
+
+// Relational: Mind Maps, Interleaving
+export const ConceptNodeSchema = z.object({
+  concept: z.string(),
+  children: z.array(z.string()),
+  relatedTopics: z.array(z.string()),
+});
+export const RelationalTopicSchema = z.object({
+  title: z.string(),
+  centralConcept: z.string(),
+  nodes: z.array(ConceptNodeSchema),
+  crossLinks: z.array(z.object({ from: z.string(), via: z.string(), to: z.string() })),
+  contrastsWith: z.array(z.object({ topic: z.string(), keyDifference: z.string() })),
+});
+export const RelationalReviewerSchema = z.object({
+  type: z.literal("relational"),
+  title: z.string(),
+  summary: z.string(),
+  topics: z.array(RelationalTopicSchema).min(3).max(6),
+  conceptMap: z.array(z.object({ from: z.string(), relationship: z.string(), to: z.string() })),
+});
+export type RelationalTopic = z.infer<typeof RelationalTopicSchema>;
+export type RelationalReviewer = z.infer<typeof RelationalReviewerSchema>;
+
+export type AnyReviewer =
+  | Reviewer
+  | ConceptualReviewer
+  | RetrievalReviewer
+  | MemoryReviewer
+  | RelationalReviewer;
+
+export type ReviewerSchemaType = "standard" | "conceptual" | "retrieval" | "memory" | "relational";
+
+export const METHOD_SCHEMA_MAP: Record<LearningMethod, ReviewerSchemaType> = {
+  feynman: "conceptual",
+  active_recall: "retrieval",
+  spaced_repetition: "memory",
+  blurting: "retrieval",
+  mind_maps: "relational",
+  mnemonic: "memory",
+  interleaving: "relational",
+  elaboration: "conceptual",
+  sq3r: "retrieval",
+  pq4r: "retrieval",
+  leitner: "memory",
+  pomodoro: "standard",
+  multisensory: "conceptual",
+};
+
 // ─── Quiz ─────────────────────────────────────────────────────────────────────
 
 export const QuizQuestionSchema = z.object({
@@ -312,7 +433,7 @@ export type Document = {
   textLength: number;
   contentHash?: string;
   createdAt: number;
-  reviewer?: Reviewer;
+  reviewer?: AnyReviewer;
   quiz?: Quiz;
   flashcards?: Flashcard[];
   flashcardReviewStates?: FlashcardReviewState[];
