@@ -34,6 +34,11 @@ export default function MatchPage() {
   // being declared before it (avoids TDZ error while still being up-to-date).
   const fetchStateRef = useRef<(() => void) | null>(null);
 
+  // Sequence counter — ensures only the LATEST fetchState response is applied.
+  // Without this, a slow stale poll can finish after a faster fresh fetch and
+  // overwrite the participant list (causes the "player flashes then disappears" bug).
+  const fetchSeqRef = useRef(0);
+
   // ── Realtime (authoritative state after initial load) ────────────────────────
   const { match, participants, answers } = useMatchRealtime(
     params.id,
@@ -50,13 +55,16 @@ export default function MatchPage() {
 
   // ── fetchState — used for initial load + post-answer score sync ──────────────
   const fetchState = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     const res = await fetch(`/api/match/${params.id}`);
+    if (seq !== fetchSeqRef.current) return; // a newer fetch is in flight — discard this one
     if (!res.ok) {
       setError("Match not found");
       setLoading(false);
       return;
     }
     const data = await res.json();
+    if (seq !== fetchSeqRef.current) return; // double-check after await
     setInitialState({
       match: data.match,
       participants: data.participants ?? [],
