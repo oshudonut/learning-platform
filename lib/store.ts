@@ -1177,6 +1177,14 @@ export async function createMatch(
   invitedUserId?: string,
   sharedDocumentId?: string
 ): Promise<MatchRoom> {
+  // Cancel any stale "waiting" matches from this host so the invited user's
+  // polling client only ever sees the newest invitation.
+  await supabase
+    .from("match_rooms")
+    .delete()
+    .eq("host_id", hostId)
+    .eq("status", "waiting");
+
   const roomCode = generateRoomCode();
   const { data, error } = await supabase
     .from("match_rooms")
@@ -1208,6 +1216,15 @@ export async function getPendingInvitations(userId: string): Promise<MatchRoom[]
     .order("created_at", { ascending: false });
   if (error) throw new Error(`getPendingInvitations: ${error.message}`);
   return (data ?? []).map((row) => rowToMatchRoom(row as Record<string, unknown>));
+}
+
+export async function cancelPendingInvitationsExcept(userId: string, acceptedMatchId: string): Promise<void> {
+  await supabase
+    .from("match_rooms")
+    .delete()
+    .eq("invited_user_id", userId)
+    .eq("status", "waiting")
+    .neq("id", acceptedMatchId);
 }
 
 export async function cancelMatch(matchId: string): Promise<void> {

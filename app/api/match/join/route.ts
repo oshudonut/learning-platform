@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
-import { getMatch, getMatchParticipants, joinMatch, ensureUserProfile } from "@/lib/store";
+import { getMatch, getMatchParticipants, joinMatch, ensureUserProfile, cancelPendingInvitationsExcept } from "@/lib/store";
 
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServer();
@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Room is full" }, { status: 409 });
     }
     await joinMatch(match.id, user.id);
+    // Cancel all other pending invitations so stale matches don't confuse future polls
+    await cancelPendingInvitationsExcept(user.id, match.id);
   }
 
   return NextResponse.json({ match });
