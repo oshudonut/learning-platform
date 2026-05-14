@@ -1,0 +1,1 @@
+- [Auth system implementation](project-auth-system.md) — clients, middleware, pages, profiles table, sidebar auth UI, required env vars

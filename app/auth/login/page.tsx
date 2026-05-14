@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Brain, Mail, Lock, Chrome, AlertCircle } from "lucide-react";
@@ -8,6 +8,10 @@ import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
+  return <Suspense><LoginPageContent /></Suspense>;
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
