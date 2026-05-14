@@ -40,29 +40,29 @@ function TutorPageInner() {
   return (
     <AppShell mainClassName="flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="border-b border-border px-8 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-primary/10 ring-1 ring-primary/20 flex items-center justify-center">
+        <div className="border-b border-border px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-xl bg-primary/10 ring-1 ring-primary/20 flex items-center justify-center flex-shrink-0">
               <Bot className="h-5 w-5 text-primary" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-foreground">AI Professor</h1>
-              <p className="text-xs text-muted-foreground">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-foreground">AI Professor</h1>
+              <p className="text-xs text-muted-foreground hidden sm:block">
                 Harvard-level tutoring · Socratic method · Adaptive teaching
               </p>
             </div>
           </div>
 
           {/* Document context selector */}
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
-              <BookOpen className="h-4 w-4 text-muted-foreground" />
+              <BookOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <select
                 value={selectedDoc}
                 onChange={(e) => handleDocChange(e.target.value)}
-                className="bg-transparent text-foreground focus:outline-none pr-6 max-w-[200px]"
+                className="bg-transparent text-foreground focus:outline-none pr-5 max-w-[120px] sm:max-w-[200px] text-xs sm:text-sm"
               >
-                <option value="">No document context</option>
+                <option value="">No context</option>
                 {docs.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.title}
@@ -74,8 +74,8 @@ function TutorPageInner() {
           </div>
         </div>
 
-        {/* Chat */}
-        <div className="flex-1 overflow-hidden px-8 py-6 flex flex-col" style={{ maxHeight: "calc(100vh - 80px)" }}>
+        {/* Chat — account for mobile top bar (56px) + this header (~65px) on small screens */}
+        <div className="flex-1 overflow-hidden px-3 sm:px-8 py-4 sm:py-6 flex flex-col" style={{ maxHeight: "calc(100vh - 56px - 65px)" }}>
           <TutorChat
             key={selectedDoc} // remount when doc changes
             documentId={selectedDoc || undefined}

@@ -123,9 +123,9 @@ export default function AnalyticsPage() {
 
   return (
     <AppShell>
-      <div className="max-w-5xl mx-auto px-8 py-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
           {/* Header */}
-          <div className="mb-8">
+          <div className="mb-6 sm:mb-8">
             <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Track your mastery, retention, and study habits
@@ -289,7 +289,7 @@ export default function AnalyticsPage() {
                 {recentQuizzes.map((attempt, i) => (
                   <div
                     key={i}
-                    className="flex items-center gap-4 rounded-lg border border-border px-4 py-3"
+                    className="flex items-center gap-3 rounded-lg border border-border px-3 sm:px-4 py-3"
                   >
                     <div
                       className="h-2.5 w-2.5 rounded-full flex-shrink-0"
@@ -304,13 +304,13 @@ export default function AnalyticsPage() {
                                 : "#ef4444",
                       }}
                     />
-                    <span className="flex-1 text-sm text-foreground truncate">
+                    <span className="flex-1 text-sm text-foreground truncate min-w-0">
                       {attempt.documentTitle}
                     </span>
-                    <span className="text-sm font-semibold text-foreground">
+                    <span className="text-sm font-semibold text-foreground flex-shrink-0">
                       {attempt.score}%
                     </span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-muted-foreground flex-shrink-0 hidden sm:block">
                       {formatDistanceToNow(attempt.completedAt)}
                     </span>
                   </div>

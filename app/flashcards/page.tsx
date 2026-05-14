@@ -32,19 +32,20 @@ export default function FlashcardsPage() {
 
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto px-8 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
+          <div className="flex items-center justify-between gap-3 mb-6 sm:mb-8">
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold text-foreground">Flashcards</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 Spaced repetition · SM-2 algorithm · Long-term retention
               </p>
             </div>
-            <Link href="/">
-              <Button variant="accent">
+            <Link href="/" className="flex-shrink-0">
+              <Button variant="accent" className="min-h-[44px]">
                 <Plus className="h-4 w-4" />
-                Upload Document
+                <span className="hidden sm:inline">Upload Document</span>
+                <span className="sm:hidden">Upload</span>
               </Button>
             </Link>
           </div>

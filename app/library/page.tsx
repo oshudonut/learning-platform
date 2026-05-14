@@ -78,23 +78,24 @@ export default function LibraryPage() {
 
   return (
     <AppShell>
-      <div className="max-w-5xl mx-auto px-8 py-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
+          <div className="flex items-center justify-between gap-3 mb-6 sm:mb-8">
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold text-foreground">Library</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 {docs.length} document{docs.length !== 1 ? "s" : ""} · All your study materials
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <Button variant="ghost" size="icon" onClick={fetchDocs}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
               <Link href="/">
-                <Button variant="accent">
+                <Button variant="accent" className="min-h-[44px]">
                   <Plus className="h-4 w-4" />
-                  Upload Document
+                  <span className="hidden sm:inline">Upload Document</span>
+                  <span className="sm:hidden">Upload</span>
                 </Button>
               </Link>
             </div>
@@ -146,82 +147,112 @@ export default function LibraryPage() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.04 }}
-                  className="group rounded-xl border border-border bg-card p-5 flex items-center gap-5 card-hover"
+                  className="group rounded-xl border border-border bg-card p-4 sm:p-5 card-hover"
                 >
-                  {/* Icon */}
-                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
-                    <BookOpen className="h-5 w-5 text-primary" />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <Link href={`/document/${doc.id}`}>
-                      <h3 className="font-semibold text-foreground hover:text-primary transition-colors truncate">
-                        {doc.title}
-                      </h3>
-                    </Link>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {doc.filename} · {Math.round(doc.textLength / 1000)}k chars · {formatDistanceToNow(doc.createdAt)}
-                    </p>
-
-                    {/* Status pills */}
-                    <div className="flex items-center gap-2 mt-2.5">
-                      {doc.hasReviewer && (
-                        <Link
-                          href={`/document/${doc.id}?tab=review`}
-                          className="inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary border border-primary/15 px-2 py-0.5 rounded-full hover:bg-primary/15 transition-colors"
-                        >
-                          <BookOpen className="h-2.5 w-2.5" />
-                          {doc.conceptCount} concepts
-                        </Link>
-                      )}
-                      {doc.hasQuiz && (
-                        <Link
-                          href={`/document/${doc.id}?tab=quiz`}
-                          className="inline-flex items-center gap-1 text-[10px] bg-success/10 text-success border border-success/15 px-2 py-0.5 rounded-full hover:bg-success/15 transition-colors"
-                        >
-                          <Zap className="h-2.5 w-2.5" />
-                          {doc.questionCount} questions
-                        </Link>
-                      )}
-                      {doc.hasFlashcards && (
-                        <Link
-                          href={`/document/${doc.id}?tab=flashcards`}
-                          className="inline-flex items-center gap-1 text-[10px] bg-sky-500/10 text-sky-400 border border-sky-500/15 px-2 py-0.5 rounded-full hover:bg-sky-500/15 transition-colors"
-                        >
-                          <Layers className="h-2.5 w-2.5" />
-                          {doc.flashcardCount} cards
-                        </Link>
-                      )}
+                  <div className="flex items-start gap-3 sm:gap-5">
+                    {/* Icon */}
+                    <div className="flex h-10 w-10 sm:h-11 sm:w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15 mt-0.5">
+                      <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                     </div>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Link href={`/tutor?doc=${doc.id}`}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Ask tutor">
-                        <MessageSquare className="h-4 w-4" />
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/document/${doc.id}`}>
+                        <h3 className="font-semibold text-foreground hover:text-primary transition-colors truncate">
+                          {doc.title}
+                        </h3>
+                      </Link>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {doc.filename} · {Math.round(doc.textLength / 1000)}k chars · {formatDistanceToNow(doc.createdAt)}
+                      </p>
+
+                      {/* Status pills */}
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2.5">
+                        {doc.hasReviewer && (
+                          <Link
+                            href={`/document/${doc.id}?tab=review`}
+                            className="inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary border border-primary/15 px-2 py-0.5 rounded-full hover:bg-primary/15 transition-colors"
+                          >
+                            <BookOpen className="h-2.5 w-2.5" />
+                            {doc.conceptCount} concepts
+                          </Link>
+                        )}
+                        {doc.hasQuiz && (
+                          <Link
+                            href={`/document/${doc.id}?tab=quiz`}
+                            className="inline-flex items-center gap-1 text-[10px] bg-success/10 text-success border border-success/15 px-2 py-0.5 rounded-full hover:bg-success/15 transition-colors"
+                          >
+                            <Zap className="h-2.5 w-2.5" />
+                            {doc.questionCount} questions
+                          </Link>
+                        )}
+                        {doc.hasFlashcards && (
+                          <Link
+                            href={`/document/${doc.id}?tab=flashcards`}
+                            className="inline-flex items-center gap-1 text-[10px] bg-sky-500/10 text-sky-400 border border-sky-500/15 px-2 py-0.5 rounded-full hover:bg-sky-500/15 transition-colors"
+                          >
+                            <Layers className="h-2.5 w-2.5" />
+                            {doc.flashcardCount} cards
+                          </Link>
+                        )}
+                      </div>
+
+                      {/* Actions — always visible on mobile (touch-friendly), hover-only on desktop */}
+                      <div className="flex items-center gap-2 mt-3 sm:hidden">
+                        <Link href={`/document/${doc.id}`}>
+                          <Button variant="outline" size="sm" className="min-h-[36px]">
+                            Open
+                          </Button>
+                        </Link>
+                        <Link href={`/tutor?doc=${doc.id}`}>
+                          <Button variant="ghost" size="icon" className="h-9 w-9" title="Ask tutor">
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDelete(doc.id, doc.title)}
+                          disabled={deleting === doc.id}
+                          title="Delete"
+                        >
+                          {deleting === doc.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Desktop actions — hover-only */}
+                    <div className="hidden sm:flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <Link href={`/tutor?doc=${doc.id}`}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Ask tutor">
+                          <MessageSquare className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                      <Link href={`/document/${doc.id}`}>
+                        <Button variant="outline" size="sm">
+                          Open
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleDelete(doc.id, doc.title)}
+                        disabled={deleting === doc.id}
+                        title="Delete"
+                      >
+                        {deleting === doc.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
                       </Button>
-                    </Link>
-                    <Link href={`/document/${doc.id}`}>
-                      <Button variant="outline" size="sm">
-                        Open
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => handleDelete(doc.id, doc.title)}
-                      disabled={deleting === doc.id}
-                      title="Delete"
-                    >
-                      {deleting === doc.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
+                    </div>
                   </div>
                 </motion.div>
               ))}

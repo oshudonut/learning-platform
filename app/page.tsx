@@ -126,14 +126,14 @@ const features = [
 export default function HomePage() {
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto px-8 py-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
           {/* Hero */}
-          <div className="text-center mb-12">
+          <div className="text-center mb-10 sm:mb-12">
             <div className="hero-badge gap-2 mb-6">
               <Sparkles className="h-3.5 w-3.5" />
               <span>Powered by Claude AI</span>
             </div>
-            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-foreground mb-4">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-foreground mb-4">
               Your personal{" "}
               <span className="gradient-text">AI professor</span>
             </h1>

@@ -3,17 +3,24 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 interface SidebarContextType {
-  collapsed: boolean;
-  toggle: () => void;
+  collapsed: boolean;       // desktop: icon-only vs full width
+  toggle: () => void;       // desktop collapse toggle
+  isMobileOpen: boolean;    // mobile: drawer open
+  openMobile: () => void;
+  closeMobile: () => void;
 }
 
 const SidebarContext = createContext<SidebarContextType>({
   collapsed: false,
   toggle: () => {},
+  isMobileOpen: false,
+  openMobile: () => {},
+  closeMobile: () => {},
 });
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -30,8 +37,16 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
+  function openMobile() {
+    setIsMobileOpen(true);
+  }
+
+  function closeMobile() {
+    setIsMobileOpen(false);
+  }
+
   return (
-    <SidebarContext.Provider value={{ collapsed, toggle }}>
+    <SidebarContext.Provider value={{ collapsed, toggle, isMobileOpen, openMobile, closeMobile }}>
       {children}
     </SidebarContext.Provider>
   );
