@@ -5,15 +5,28 @@ import { mapMatchRoomPayload, mapParticipantPayload, mapAnswerPayload } from "@/
 import type { MatchRoom, MatchParticipant, MatchAnswer } from "@/lib/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
+interface UseMatchRealtimeOpts {
+  // Called whenever a new participant joins via Realtime — use to trigger a
+  // full fetchState() so the lobby displays participant profiles correctly.
+  onNewParticipant?: () => void;
+}
+
 export function useMatchRealtime(
   matchId: string,
-  initial: { match: MatchRoom | null; participants: MatchParticipant[]; answers: MatchAnswer[] }
+  initial: { match: MatchRoom | null; participants: MatchParticipant[]; answers: MatchAnswer[] },
+  opts?: UseMatchRealtimeOpts
 ): { match: MatchRoom | null; participants: MatchParticipant[]; answers: MatchAnswer[] } {
   const [match, setMatch] = useState<MatchRoom | null>(initial.match);
   const [participants, setParticipants] = useState<MatchParticipant[]>(initial.participants);
   const [answers, setAnswers] = useState<MatchAnswer[]>(initial.answers);
 
-  // Seed state whenever initial changes (e.g., server-side refresh)
+  // Stable ref so the Realtime closure always calls the latest callback
+  const onNewParticipantRef = useRef(opts?.onNewParticipant);
+  useEffect(() => {
+    onNewParticipantRef.current = opts?.onNewParticipant;
+  });
+
+  // Seed state whenever initial changes (e.g., server-side refresh after join)
   useEffect(() => {
     setMatch(initial.match);
     setParticipants(initial.participants);
@@ -62,10 +75,12 @@ export function useMatchRealtime(
                   score: (row.score as number) ?? 0,
                   isReady: (row.is_ready as boolean) ?? false,
                   joinedAt: row.joined_at as string,
-                  profile: undefined,
+                  profile: undefined, // profile fetched via onNewParticipant → fetchState
                 },
               ];
             });
+            // Trigger a full refresh so the lobby gets participant display names
+            onNewParticipantRef.current?.();
           } else if (payload.eventType === "UPDATE") {
             const row = payload.new as Record<string, unknown>;
             const updates = mapParticipantPayload(row);

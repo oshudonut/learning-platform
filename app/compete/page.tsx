@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Swords,
@@ -14,10 +14,8 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { ChallengeModal } from "@/components/compete/ChallengeModal";
 import { FriendCard } from "@/components/compete/FriendCard";
 import { usePresence } from "@/hooks/usePresence";
-import { useChallengeListener } from "@/hooks/useChallengeListener";
 import type { UserProfile, FriendRequest, MatchRoom } from "@/lib/types";
 
 interface DocumentEntry {
@@ -26,22 +24,6 @@ interface DocumentEntry {
   hasQuiz: boolean;
 }
 
-// Shape of an invitation as returned by GET /api/match/invitations
-interface InvitationDetail {
-  id: string;
-  hostProfile: { displayName: string } | null;
-  totalQuestions: number;
-  sharedDocumentId: string | null;
-  documentTitle?: string;
-}
-
-interface PendingChallenge {
-  matchId: string;
-  hostName: string;
-  documentTitle: string;
-  questionCount: number;
-  sharedDocumentId: string | null;
-}
 
 export default function CompetePage() {
   const router = useRouter();
@@ -66,13 +48,6 @@ export default function CompetePage() {
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [searching, setSearching] = useState(false);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
-
-  // ── Live challenge modal ─────────────────────────────────────────────────────
-  const [pendingChallenge, setPendingChallenge] = useState<PendingChallenge | null>(null);
-
-  // Stable ref so useChallengeListener callback never re-creates
-  const pendingChallengeRef = useRef<PendingChallenge | null>(null);
-  pendingChallengeRef.current = pendingChallenge;
 
   // ── Presence ─────────────────────────────────────────────────────────────────
   const { onlineMap } = usePresence(user?.id ?? undefined);
@@ -106,33 +81,6 @@ export default function CompetePage() {
     loadFriends();
     loadInvitations();
   }, [loadFriends, loadInvitations]);
-
-  // ── Live challenge listener (replaces 5s polling) ────────────────────────────
-  // Stable callback: reads from ref so it never triggers hook re-subscription
-  const onChallenge = useCallback(
-    async (matchId: string) => {
-      // Don't stack multiple modals
-      if (pendingChallengeRef.current) return;
-
-      const res = await fetch("/api/match/invitations");
-      if (!res.ok) return;
-      const data = await res.json();
-      const invs: InvitationDetail[] = data.invitations ?? [];
-      const inv = invs.find((i) => i.id === matchId);
-      if (!inv) return;
-
-      setPendingChallenge({
-        matchId: inv.id,
-        hostName: inv.hostProfile?.displayName ?? "Someone",
-        documentTitle: inv.documentTitle ?? "Unknown document",
-        questionCount: inv.totalQuestions,
-        sharedDocumentId: inv.sharedDocumentId,
-      });
-    },
-    [] // intentionally empty — reads pendingChallengeRef instead of state
-  );
-
-  useChallengeListener(user?.id, onChallenge);
 
   // ── User search debounce ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -201,28 +149,6 @@ export default function CompetePage() {
     setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
   }
 
-  // ── Modal accept / decline ───────────────────────────────────────────────────
-  async function handleModalAccept() {
-    if (!pendingChallenge) return;
-    const res = await fetch("/api/match/join", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matchId: pendingChallenge.matchId }),
-    });
-    if (res.ok) {
-      router.push(`/match/${pendingChallenge.matchId}`);
-    }
-  }
-
-  async function handleModalDecline() {
-    if (!pendingChallenge) return;
-    await fetch(`/api/match/${pendingChallenge.matchId}/decline`, {
-      method: "POST",
-    });
-    setPendingChallenge(null);
-    loadInvitations();
-  }
-
   // ── Friend management ────────────────────────────────────────────────────────
   async function handleAddFriend(addresseeId: string) {
     await fetch("/api/friends", {
@@ -260,19 +186,6 @@ export default function CompetePage() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <AppShell>
-      {/* Live challenge modal — renders outside the grid at the page root */}
-      {pendingChallenge && (
-        <ChallengeModal
-          matchId={pendingChallenge.matchId}
-          hostName={pendingChallenge.hostName}
-          documentTitle={pendingChallenge.documentTitle}
-          questionCount={pendingChallenge.questionCount}
-          sharedDocumentId={pendingChallenge.sharedDocumentId}
-          onAccept={handleModalAccept}
-          onDecline={handleModalDecline}
-        />
-      )}
-
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Hero */}
         <div className="mb-8">

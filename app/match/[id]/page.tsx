@@ -30,10 +30,15 @@ export default function MatchPage() {
     answers: MatchAnswer[];
   }>({ match: null, participants: [], answers: [] });
 
+  // Stable ref used by useMatchRealtime so it can call fetchState without
+  // being declared before it (avoids TDZ error while still being up-to-date).
+  const fetchStateRef = useRef<(() => void) | null>(null);
+
   // ── Realtime (authoritative state after initial load) ────────────────────────
   const { match, participants, answers } = useMatchRealtime(
     params.id,
-    initialState
+    initialState,
+    { onNewParticipant: () => fetchStateRef.current?.() }
   );
 
   // ── UI state ─────────────────────────────────────────────────────────────────
@@ -59,6 +64,9 @@ export default function MatchPage() {
     });
     setLoading(false);
   }, [params.id]);
+
+  // Keep the ref in sync so useMatchRealtime always calls the latest fetchState
+  fetchStateRef.current = fetchState;
 
   // Single fetch on mount — realtime takes over from here
   useEffect(() => {
