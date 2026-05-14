@@ -224,31 +224,31 @@ Return EXACTLY this JSON (no extra fields, no markdown):
   "topics": [
     {
       "title": "topic name",
-      "analogy": "A vivid, specific real-world analogy: 'Think of X like Y because...' — must be concrete, not generic",
-      "simplifiedExplanation": "2-4 sentences in plain language. No jargon. Explain to a smart 14-year-old. No bullet points — flowing prose only.",
+      "analogy": "One vivid analogy: 'Think of X like Y because...' — specific and concrete",
+      "simplifiedExplanation": "2-3 sentences in plain language. No jargon. No bullet points.",
       "mechanism": [
-        "Step 1 cause → effect (use → arrows to show causation or sequence)",
-        "Step 2 → next step → consequence",
-        "3-5 chain steps total"
+        "cause → effect (use → arrows)",
+        "next step → consequence",
+        "2-4 steps max"
       ],
-      "keyTakeaways": ["What the student must walk away knowing — short phrase", "3-5 items"],
+      "keyTakeaways": ["short phrase", "3-4 items max"],
       "selfCheck": [
         "Can you explain ___ back in your own words?",
-        "What would happen if ___?",
-        "2-4 genuine comprehension questions"
+        "2-3 questions max"
       ]
     }
   ],
-  "bigPicture": "2-3 sentences — how ALL the topics connect to each other and why the whole document matters together"
+  "bigPicture": "2 sentences — how the topics connect"
 }
 
 Hard constraints:
-- topics: 3-6 covering the main concepts
-- analogy: Must be specific and vivid — "Think of X like Y because Z" pattern
-- simplifiedExplanation: Flowing prose, NO bullet points inside it, NO jargon
-- mechanism: Use → arrows throughout, show causation not just sequence
-- selfCheck: Real comprehension questions, not recall prompts
-- bigPicture: Must synthesize ALL topics — do not repeat topic summaries`;
+- topics: 3-5 max (NOT 6)
+- analogy: ONE sentence — specific vivid comparison
+- simplifiedExplanation: 2-3 sentences ONLY — no paragraphs
+- mechanism: 2-4 steps ONLY — one phrase per step, use → arrows
+- keyTakeaways: 3-4 short phrases — no full sentences
+- selfCheck: 2-3 questions ONLY
+- bigPicture: 2 sentences ONLY`;
 }
 
 function buildRetrievalTask(method: LearningMethod, mode: StudyMode): string {
@@ -280,29 +280,28 @@ Return EXACTLY this JSON (no extra fields, no markdown):
       "blurtPrompt": "Close the screen. Write down EVERYTHING you know about '[specific topic name]'. You have 60 seconds. Do it before reading anything below.",
       "questions": [
         {
-          "q": "Specific retrieval question that tests genuine recall",
-          "hint": "Optional one-word or short-phrase nudge (omit for easy questions)",
-          "answer": "The complete accurate answer — 1-3 sentences"
+          "q": "Specific retrieval question",
+          "hint": "One-word nudge (omit for easy questions)",
+          "answer": "Complete answer — 1-2 sentences max"
         }
       ],
-      "keyFacts": ["Testable fact in short phrase format", "3-5 items"],
-      "commonMistakes": ["A real misconception students make about this topic", "1-3 items"]
+      "keyFacts": ["Short phrase — testable fact", "3-4 items max"],
+      "commonMistakes": ["One real misconception", "1-2 items max"]
     }
   ],
   "finalChallenge": [
-    "Cross-topic synthesis question that requires connecting multiple sections",
-    "3-5 questions spanning the whole document"
+    "Cross-topic synthesis question",
+    "3-4 questions max"
   ]
 }
 
 Hard constraints:
-- topics: 3-6 covering the main concepts
-- blurtPrompt: Must name the specific topic, not be generic
-- questions: 3-5 per topic, ordered easy → hard
-- hint: Include ONLY for harder questions — never give away the answer
-- answer: Accurate, complete, 1-3 sentences
-- commonMistakes: Real misconceptions, not obvious wrong answers
-- finalChallenge: Must require knowledge from multiple topics`;
+- topics: 3-5 max (NOT 6)
+- questions: 3-4 per topic ONLY — ordered easy → hard
+- answer: 1-2 sentences ONLY
+- keyFacts: 3-4 short phrases ONLY
+- commonMistakes: 1-2 items ONLY
+- finalChallenge: 3-4 questions ONLY`;
 }
 
 function buildMemoryTask(method: LearningMethod, mode: StudyMode): string {
@@ -358,12 +357,12 @@ Return EXACTLY this JSON (no extra fields, no markdown):
 }
 
 Hard constraints:
-- topics: 3-6 covering the main concepts
-- anchors: 3-5 per topic — only for facts genuinely hard to remember
-- anchor field: Must be a SPECIFIC device — spell out the acronym, write the actual rhyme, describe the actual story
+- topics: 3-5 max (NOT 6)
+- anchors: 2-3 per topic ONLY — highest-yield facts only
+- anchor field: Must be a SPECIFIC device — actual acronym spelled out, actual rhyme, actual 1-sentence story
 - priority HIGH → reviewIn "tomorrow", MEDIUM → "3 days", LOW → "1 week"
-- associations: 2-4 per topic — vivid hooks for concepts, not restatements of the fact
-- masterAnchors: 5-8 highest-yield cross-topic facts with strong anchors
+- associations: 1-2 per topic ONLY
+- masterAnchors: 4-5 ONLY — top cross-topic facts
 - Do NOT generate generic descriptions like "use a mnemonic" — generate the actual mnemonic`;
 }
 
@@ -423,12 +422,12 @@ Return EXACTLY this JSON (no extra fields, no markdown):
 }
 
 Hard constraints:
-- topics: 3-6 covering the main concepts
-- nodes: 3-5 per topic — sub-concepts that radiate from the central concept
-- crossLinks: CROSS-TOPIC connections ONLY — links within one topic go in nodes.children
-- relationship verbs: Be specific — not "relates to", use "causes", "inhibits", "requires", "differentiates", etc.
-- contrastsWith: Common confusion pairs — include only where genuine mix-up risk exists
-- conceptMap: 5-8 global connections spanning multiple topics`;
+- topics: 3-5 max (NOT 6)
+- nodes: 2-3 per topic ONLY
+- children: 1-2 items per node ONLY
+- crossLinks: 1-2 per topic ONLY — CROSS-TOPIC connections only
+- contrastsWith: 1-2 per topic ONLY — genuine confusion pairs only
+- conceptMap: 4-6 global connections ONLY`;
 }
 
 export function getMethodologyConfig(method: LearningMethod, mode: StudyMode): {
