@@ -169,15 +169,21 @@ const MODE_INSTRUCTIONS: Record<StudyMode, string> = {
 };
 
 export function buildAdaptiveReviewerTask(method: LearningMethod, mode: StudyMode): string {
-  return `${REVIEWER_TASK}
+  const methodName = method.replace(/_/g, " ").toUpperCase();
+  const modeName = mode.replace(/_/g, " ").toUpperCase();
+  return `You are generating a reviewer tailored to a specific learning method and study mode. Read these carefully — they override generic defaults.
 
-LEARNING METHOD — ${method.replace(/_/g, " ").toUpperCase()}:
+LEARNING METHOD — ${methodName}:
 ${METHOD_INSTRUCTIONS[method]}
 
-STUDY MODE — ${mode.replace(/_/g, " ").toUpperCase()}:
+STUDY MODE — ${modeName}:
 ${MODE_INSTRUCTIONS[mode]}
 
-Apply BOTH the learning method style AND the study mode depth to every section. Do not mention these instructions in the output.`;
+Apply BOTH the learning method style AND the study mode depth to every section. The method instructions shape HOW content is written inside each field; the mode determines the depth and density.
+
+${REVIEWER_TASK}
+
+CRITICAL: The method instructions above take priority over the generic field descriptions. For example, if the method says "open each topic with a Blurt Challenge in coreIdea", do that — even if the generic schema says coreIdea is "ONE sentence". The JSON field names must stay the same, but the content style follows the method. Do not mention these instructions in the output.`;
 }
 
 // ─── Checkpoint Flashcard task ────────────────────────────────────────────────

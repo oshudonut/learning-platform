@@ -434,6 +434,8 @@ function DocumentPageInner() {
                         reviewer={reviewer.data}
                         progression={progression ?? undefined}
                         documentId={id}
+                        learningMethod={progression?.learningMethod}
+                        studyMode={progression?.studyMode}
                         onSectionComplete={handleSectionComplete}
                         onStartFlashcards={handleStartFlashcards}
                       />
