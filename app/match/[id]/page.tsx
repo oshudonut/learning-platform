@@ -34,10 +34,12 @@ export default function MatchPage() {
   // being declared before it (avoids TDZ error while still being up-to-date).
   const fetchStateRef = useRef<(() => void) | null>(null);
 
-  // Sequence counter — ensures only the LATEST fetchState response is applied.
-  // Without this, a slow stale poll can finish after a faster fresh fetch and
-  // overwrite the participant list (causes the "player flashes then disappears" bug).
+  // Sequence counter: each fetchState call gets a monotonically increasing ID.
+  // A response is only applied if no newer fetch has ALREADY RESOLVED — tracked
+  // via lastAppliedSeqRef. This prevents a slow response from overwriting a
+  // faster, more recent one, without cancelling in-flight concurrent fetches.
   const fetchSeqRef = useRef(0);
+  const lastAppliedSeqRef = useRef(0);
 
   // ── Realtime (authoritative state after initial load) ────────────────────────
   const { match, participants, answers } = useMatchRealtime(
@@ -57,14 +59,17 @@ export default function MatchPage() {
   const fetchState = useCallback(async () => {
     const seq = ++fetchSeqRef.current;
     const res = await fetch(`/api/match/${params.id}`);
-    if (seq !== fetchSeqRef.current) return; // a newer fetch is in flight — discard this one
+    // Only skip if a newer response has ALREADY been applied — not just started.
+    // This way concurrent polls don't cancel each other; only stale ones lose.
+    if (seq < lastAppliedSeqRef.current) return;
     if (!res.ok) {
       setError("Match not found");
       setLoading(false);
       return;
     }
     const data = await res.json();
-    if (seq !== fetchSeqRef.current) return; // double-check after await
+    if (seq < lastAppliedSeqRef.current) return;
+    lastAppliedSeqRef.current = seq;
     setInitialState({
       match: data.match,
       participants: data.participants ?? [],
@@ -76,18 +81,35 @@ export default function MatchPage() {
   // Keep the ref in sync so useMatchRealtime always calls the latest fetchState
   fetchStateRef.current = fetchState;
 
+  // Auto-join: if the current user is the invited user but not yet a participant
+  // (e.g., ChallengeProvider join call failed, or user navigated directly to the URL),
+  // silently join them so they appear in the lobby.
+  const hasAutoJoinedRef = useRef(false);
+  useEffect(() => {
+    if (!match || !user) return;
+    if (hasAutoJoinedRef.current) return;
+    const alreadyIn = participants.some((p) => p.userId === user.id);
+    if (!alreadyIn && match.invitedUserId === user.id && match.status === "waiting") {
+      hasAutoJoinedRef.current = true;
+      fetch(`/api/match/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: params.id }),
+      }).then((r) => { if (r.ok) fetchState(); }).catch(() => {});
+    }
+  }, [match, participants, user, params.id, fetchState]);
+
   // Single fetch on mount — realtime takes over from here
   useEffect(() => {
     fetchState();
   }, [fetchState]);
 
-  // While waiting for opponent: poll every 3 s so the lobby always reflects
-  // the latest participant list and status, even if Realtime events are missed.
-  // This catches the waiting→active transition so the host doesn't get stuck.
+  // While waiting for opponent: poll every 1.5 s so the lobby stays in sync
+  // even when Realtime events are delayed or missed. Catches waiting→active.
   useEffect(() => {
     if (!match) return;
     if (match.status !== "waiting") return;
-    const interval = setInterval(fetchState, 3000);
+    const interval = setInterval(fetchState, 1500);
     return () => clearInterval(interval);
   }, [match?.status, fetchState]);
 
