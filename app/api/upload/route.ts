@@ -1,8 +1,10 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { extractPdfText, chunkText } from "@/lib/pdf";
 import { ocrPdfWithVision } from "@/lib/claude";
 import { saveDocument, saveChunks } from "@/lib/store";
 import { randomId } from "@/lib/utils";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 
@@ -53,6 +55,9 @@ async function ocrImageWithVision(buffer: Buffer, mimeType: string): Promise<str
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+
     const form = await req.formData();
     const file = form.get("file");
     const forceOcr = form.get("ocr") === "true";
@@ -138,6 +143,7 @@ export async function POST(req: NextRequest) {
       text: storedText,
       textLength: text.length,
       createdAt: Date.now(),
+      userId: user?.id ?? null,
     });
 
     await saveChunks(id, chunks);

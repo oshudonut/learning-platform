@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
-import { getMatchByCode, getMatchParticipants, joinMatch } from "@/lib/store";
+import { getMatchByCode, getMatchParticipants, joinMatch, ensureUserProfile } from "@/lib/store";
 
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServer();
@@ -10,6 +10,8 @@ export async function POST(req: NextRequest) {
 
   const { roomCode } = await req.json() as { roomCode?: string };
   if (!roomCode) return NextResponse.json({ error: "Missing roomCode" }, { status: 400 });
+
+  await ensureUserProfile(user.id, user.email ?? "");
 
   const match = await getMatchByCode(roomCode);
   if (!match) return NextResponse.json({ error: "Room not found" }, { status: 404 });

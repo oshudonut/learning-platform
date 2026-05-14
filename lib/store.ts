@@ -38,6 +38,7 @@ function toRow(doc: Document) {
     text_length: doc.textLength,
     content_hash: doc.contentHash ?? null,
     created_at: doc.createdAt,
+    user_id: doc.userId ?? null,
     reviewer: doc.reviewer ?? null,
     quiz: doc.quiz ?? null,
     flashcards: doc.flashcards ?? null,
@@ -55,6 +56,7 @@ function fromRow(row: Record<string, unknown>): Document {
     textLength: row.text_length as number,
     contentHash: (row.content_hash as string | null) ?? undefined,
     createdAt: row.created_at as number,
+    userId: (row.user_id as string | null) ?? null,
     reviewer: (row.reviewer as Document["reviewer"]) ?? undefined,
     quiz: (row.quiz as Document["quiz"]) ?? undefined,
     flashcards: (row.flashcards as Document["flashcards"]) ?? undefined,
@@ -97,15 +99,21 @@ export async function deleteDocument(id: string): Promise<void> {
   if (error) throw new Error(`deleteDocument: ${error.message}`);
 }
 
-export async function listDocuments(): Promise<
+export async function listDocuments(userId?: string): Promise<
   Array<Omit<Document, "text" | "reviewer" | "quiz" | "flashcards">>
 > {
-  const { data, error } = await supabase
+  let query = supabase
     .from("documents")
     .select(
-      "id, title, filename, text_length, content_hash, created_at, flashcard_review_states, chunks, reviewer, quiz, flashcards",
+      "id, title, filename, text_length, content_hash, created_at, user_id, flashcard_review_states, chunks, reviewer, quiz, flashcards",
     )
     .order("created_at", { ascending: false });
+
+  if (userId) {
+    query = query.eq("user_id", userId);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(`listDocuments: ${error.message}`);
 
   return (data ?? []).map((row) => {
@@ -545,6 +553,14 @@ function rowToProfile(row: Record<string, unknown>): UserProfile {
     lastActive: (row.last_active as number | null) ?? null,
     createdAt: row.created_at as number,
   };
+}
+
+export async function ensureUserProfile(userId: string, email: string): Promise<void> {
+  const username = email.split("@")[0] + "_" + userId.slice(0, 6);
+  await supabase.from("user_profiles").upsert(
+    { id: userId, username, display_name: email.split("@")[0] },
+    { onConflict: "id", ignoreDuplicates: true }
+  );
 }
 
 export async function getProfile(userId: string): Promise<UserProfile | null> {
@@ -1131,47 +1147,56 @@ export async function respondToFriendRequest(
 }
 
 export async function getFriends(userId: string): Promise<import("./types").UserProfile[]> {
-  const { data, error } = await supabase
+  const { data: friendships, error } = await supabase
     .from("friendships")
-    .select(`
-      requester_id, addressee_id,
-      requester:user_profiles!friendships_requester_id_fkey(id, username, display_name, avatar_url, xp, level, study_streak, bio, last_active, created_at),
-      addressee:user_profiles!friendships_addressee_id_fkey(id, username, display_name, avatar_url, xp, level, study_streak, bio, last_active, created_at)
-    `)
+    .select("requester_id, addressee_id")
     .eq("status", "accepted")
     .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
   if (error) throw new Error(`getFriends: ${error.message}`);
-  return (data ?? []).map((row) => {
-    const other = (row.requester_id === userId ? row.addressee : row.requester) as unknown as Record<string, unknown>;
-    return rowToProfile(other);
-  });
+  if (!friendships?.length) return [];
+
+  const otherIds = friendships.map((f) =>
+    f.requester_id === userId ? f.addressee_id : f.requester_id
+  );
+
+  const { data: profiles, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .in("id", otherIds);
+  if (profileError) throw new Error(`getFriends profiles: ${profileError.message}`);
+  return (profiles ?? []).map((p) => rowToProfile(p as Record<string, unknown>));
 }
 
 export async function getPendingRequests(userId: string): Promise<FriendRequest[]> {
-  const { data, error } = await supabase
+  const { data: rows, error } = await supabase
     .from("friendships")
-    .select(`id, requester_id, addressee_id, status, created_at, requester:user_profiles!friendships_requester_id_fkey(id, username, display_name, avatar_url)`)
+    .select("id, requester_id, addressee_id, status, created_at")
     .eq("addressee_id", userId)
     .eq("status", "pending");
   if (error) throw new Error(`getPendingRequests: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    requesterId: row.requester_id,
-    addresseeId: row.addressee_id,
-    status: row.status as "pending",
-    createdAt: row.created_at,
-    requester: row.requester
-      ? (() => {
-          const r = row.requester as unknown as Record<string, unknown>;
-          return {
-            id: r.id as string,
-            username: r.username as string,
-            displayName: r.display_name as string,
-            avatarUrl: r.avatar_url as string | null,
-          };
-        })()
-      : undefined,
-  }));
+  if (!rows?.length) return [];
+
+  const requesterIds = rows.map((r) => r.requester_id);
+  const { data: profiles } = await supabase
+    .from("user_profiles")
+    .select("id, username, display_name, avatar_url")
+    .in("id", requesterIds);
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+  return rows.map((row) => {
+    const p = profileMap.get(row.requester_id);
+    return {
+      id: row.id,
+      requesterId: row.requester_id,
+      addresseeId: row.addressee_id,
+      status: row.status as "pending",
+      createdAt: row.created_at,
+      requester: p
+        ? { id: p.id, username: p.username, displayName: p.display_name, avatarUrl: p.avatar_url }
+        : undefined,
+    };
+  });
 }
 
 // ─── Match Rooms ──────────────────────────────────────────────────────────────

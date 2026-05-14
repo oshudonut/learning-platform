@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
-import { getDocument, createMatch } from "@/lib/store";
+import { getDocument, createMatch, ensureUserProfile } from "@/lib/store";
 
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServer();
@@ -10,6 +10,8 @@ export async function POST(req: NextRequest) {
 
   const { documentId } = await req.json() as { documentId?: string };
   if (!documentId) return NextResponse.json({ error: "Missing documentId" }, { status: 400 });
+
+  await ensureUserProfile(user.id, user.email ?? "");
 
   const doc = await getDocument(documentId);
   if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
