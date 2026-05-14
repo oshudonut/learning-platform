@@ -43,18 +43,6 @@ export default function MatchPage() {
     fetchState();
   }, [fetchState]);
 
-  // Auto-join if user is authenticated but not yet a participant (e.g. navigated directly to URL)
-  useEffect(() => {
-    if (!user || !match || match.status !== "waiting") return;
-    const isParticipant = participants.some((p) => p.userId === user.id);
-    if (isParticipant || participants.length >= 2) return;
-    fetch(`/api/match/join`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ roomCode: match.roomCode }),
-    }).then(() => fetchState());
-  }, [user, match?.id, match?.status, participants.length, fetchState]);
-
   // Poll while active or waiting
   useEffect(() => {
     if (!match || match.status === "completed") return;

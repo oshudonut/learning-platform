@@ -582,6 +582,7 @@ export type MatchRoom = {
   id: string;
   roomCode: string;
   hostId: string;
+  invitedUserId: string | null;
   documentId: string | null;
   status: "waiting" | "active" | "completed";
   quizSnapshot: QuizQuestion[];
@@ -590,6 +591,7 @@ export type MatchRoom = {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+  hostProfile?: { displayName: string; username: string } | null;
 };
 
 export type MatchParticipant = {

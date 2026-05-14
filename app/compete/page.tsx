@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Swords, Users, UserPlus, Check, X, Search, ChevronRight, BookOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { UserProfile, FriendRequest } from "@/lib/types";
+import type { UserProfile, FriendRequest, MatchRoom } from "@/lib/types";
 
 interface DocumentEntry {
   id: string;
@@ -19,15 +19,16 @@ export default function CompetePage() {
 
   const [docs, setDocs] = useState<DocumentEntry[]>([]);
   const [selectedDocId, setSelectedDocId] = useState("");
+  const [selectedFriendId, setSelectedFriendId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const [roomCode, setRoomCode] = useState("");
-  const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
-
   const [friends, setFriends] = useState<UserProfile[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [invitations, setInvitations] = useState<MatchRoom[]>([]);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [decliningId, setDecliningId] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [searching, setSearching] = useState(false);
@@ -42,12 +43,27 @@ export default function CompetePage() {
     }
   }, []);
 
+  const loadInvitations = useCallback(async () => {
+    const res = await fetch("/api/match/invitations");
+    if (res.ok) {
+      const data = await res.json();
+      setInvitations(data.invitations ?? []);
+    }
+  }, []);
+
   useEffect(() => {
     fetch("/api/library")
       .then((r) => r.json())
       .then((data) => setDocs((data.documents ?? []).filter((d: DocumentEntry) => d.hasQuiz)));
     loadFriends();
-  }, [loadFriends]);
+    loadInvitations();
+  }, [loadFriends, loadInvitations]);
+
+  // Poll for new invitations every 5s
+  useEffect(() => {
+    const interval = setInterval(loadInvitations, 5000);
+    return () => clearInterval(interval);
+  }, [loadInvitations]);
 
   useEffect(() => {
     if (searchQuery.length < 2) { setSearchResults([]); return; }
@@ -61,13 +77,13 @@ export default function CompetePage() {
   }, [searchQuery]);
 
   async function handleCreate() {
-    if (!selectedDocId) return;
+    if (!selectedDocId || !selectedFriendId) return;
     setCreating(true);
     setCreateError(null);
     const res = await fetch("/api/match/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ documentId: selectedDocId }),
+      body: JSON.stringify({ documentId: selectedDocId, invitedUserId: selectedFriendId }),
     });
     const data = await res.json();
     setCreating(false);
@@ -75,19 +91,24 @@ export default function CompetePage() {
     router.push(`/match/${data.match.id}`);
   }
 
-  async function handleJoin() {
-    if (roomCode.length < 6) return;
-    setJoining(true);
-    setJoinError(null);
+  async function handleAccept(invitation: MatchRoom) {
+    setAcceptingId(invitation.id);
     const res = await fetch("/api/match/join", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ roomCode }),
+      body: JSON.stringify({ matchId: invitation.id }),
     });
+    setAcceptingId(null);
+    if (!res.ok) return;
     const data = await res.json();
-    setJoining(false);
-    if (!res.ok) { setJoinError(data.error ?? "Failed to join"); return; }
     router.push(`/match/${data.match.id}`);
+  }
+
+  async function handleDecline(invitation: MatchRoom) {
+    setDecliningId(invitation.id);
+    await fetch(`/api/match/${invitation.id}/decline`, { method: "POST" });
+    setDecliningId(null);
+    setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
   }
 
   async function handleAddFriend(addresseeId: string) {
@@ -128,15 +149,17 @@ export default function CompetePage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left: Create + Join */}
+          {/* Left: Create + Invitations */}
           <div className="space-y-4">
-            {/* Create Match */}
+            {/* Challenge a Friend */}
             <div className="rounded-2xl bg-gray-800 border border-gray-700 p-6">
               <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                <Swords className="h-4 w-4 text-indigo-400" /> Create a Match
+                <Swords className="h-4 w-4 text-indigo-400" /> Challenge a Friend
               </h2>
               {docs.length === 0 ? (
                 <p className="text-sm text-gray-500">No documents with quizzes yet. Generate a quiz on a document first.</p>
+              ) : friends.length === 0 ? (
+                <p className="text-sm text-gray-500">Add friends first to challenge them.</p>
               ) : (
                 <div className="space-y-3">
                   <div>
@@ -152,41 +175,67 @@ export default function CompetePage() {
                       ))}
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Challenge</label>
+                    <select
+                      value={selectedFriendId}
+                      onChange={(e) => setSelectedFriendId(e.target.value)}
+                      className="w-full rounded-lg bg-gray-700/50 border border-gray-600 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    >
+                      <option value="">Select friend...</option>
+                      {friends.map((f) => (
+                        <option key={f.id} value={f.id}>{f.displayName ?? f.username}</option>
+                      ))}
+                    </select>
+                  </div>
                   {createError && <p className="text-xs text-red-400">{createError}</p>}
                   <button
                     onClick={handleCreate}
-                    disabled={!selectedDocId || creating}
+                    disabled={!selectedDocId || !selectedFriendId || creating}
                     className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 transition-colors flex items-center justify-center gap-2"
                   >
-                    {creating ? "Creating..." : <><Swords className="h-4 w-4" /> Create Match</>}
+                    {creating ? "Sending challenge..." : <><Swords className="h-4 w-4" /> Send Challenge</>}
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Join by Code */}
-            <div className="rounded-2xl bg-gray-800 border border-gray-700 p-6">
-              <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-emerald-400" /> Join by Code
-              </h2>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={roomCode}
-                  onChange={(e) => setRoomCode(e.target.value.toUpperCase().slice(0, 6))}
-                  placeholder="Enter 6-char code"
-                  className="w-full rounded-lg bg-gray-700/50 border border-gray-600 px-3 py-2.5 text-sm text-white placeholder-gray-500 font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                />
-                {joinError && <p className="text-xs text-red-400">{joinError}</p>}
-                <button
-                  onClick={handleJoin}
-                  disabled={roomCode.length < 6 || joining}
-                  className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 transition-colors flex items-center justify-center gap-2"
-                >
-                  {joining ? "Joining..." : <><ChevronRight className="h-4 w-4" /> Join Match</>}
-                </button>
+            {/* Pending Invitations */}
+            {invitations.length > 0 && (
+              <div className="rounded-2xl bg-gray-800 border border-gray-700 p-6">
+                <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-amber-400" /> Challenges ({invitations.length})
+                </h2>
+                <div className="space-y-3">
+                  {invitations.map((inv) => (
+                    <div key={inv.id} className="flex items-center justify-between gap-3 rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-white">
+                          {inv.hostProfile?.displayName ?? "Someone"} challenged you!
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">{inv.totalQuestions} questions</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => handleAccept(inv)}
+                          disabled={acceptingId === inv.id}
+                          className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium transition-colors"
+                        >
+                          {acceptingId === inv.id ? "Joining..." : <><Check className="h-3.5 w-3.5" /> Accept</>}
+                        </button>
+                        <button
+                          onClick={() => handleDecline(inv)}
+                          disabled={decliningId === inv.id}
+                          className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 text-red-400 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Right: Friends */}

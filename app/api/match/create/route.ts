@@ -8,8 +8,9 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { documentId } = await req.json() as { documentId?: string };
+  const { documentId, invitedUserId } = await req.json() as { documentId?: string; invitedUserId?: string };
   if (!documentId) return NextResponse.json({ error: "Missing documentId" }, { status: 400 });
+  if (!invitedUserId) return NextResponse.json({ error: "Missing invitedUserId" }, { status: 400 });
 
   await ensureUserProfile(user.id, user.email ?? "");
 
@@ -21,6 +22,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Document has no quiz questions. Generate the quiz first." }, { status: 400 });
   }
 
-  const match = await createMatch(user.id, documentId, questions);
+  const match = await createMatch(user.id, documentId, questions, invitedUserId);
   return NextResponse.json({ match });
 }

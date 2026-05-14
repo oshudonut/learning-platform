@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS match_rooms (
   id                     uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   room_code              text UNIQUE NOT NULL,
   host_id                uuid REFERENCES user_profiles(id) ON DELETE CASCADE,
+  invited_user_id        uuid REFERENCES user_profiles(id) ON DELETE SET NULL,
   document_id            text,
   status                 text DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'completed')),
   quiz_snapshot          jsonb NOT NULL,
@@ -42,8 +43,12 @@ CREATE TABLE IF NOT EXISTS match_rooms (
   created_at             timestamptz DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS match_rooms_room_code_idx ON match_rooms(room_code);
-CREATE INDEX IF NOT EXISTS match_rooms_host_id_idx   ON match_rooms(host_id);
+-- Migration: add invited_user_id if table already exists
+ALTER TABLE match_rooms ADD COLUMN IF NOT EXISTS invited_user_id uuid REFERENCES user_profiles(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS match_rooms_room_code_idx        ON match_rooms(room_code);
+CREATE INDEX IF NOT EXISTS match_rooms_host_id_idx          ON match_rooms(host_id);
+CREATE INDEX IF NOT EXISTS match_rooms_invited_user_id_idx  ON match_rooms(invited_user_id);
 
 ALTER TABLE match_rooms ENABLE ROW LEVEL SECURITY;
 

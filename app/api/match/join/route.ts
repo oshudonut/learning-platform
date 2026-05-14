@@ -1,21 +1,26 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
-import { getMatchByCode, getMatchParticipants, joinMatch, ensureUserProfile } from "@/lib/store";
+import { getMatch, getMatchParticipants, joinMatch, ensureUserProfile } from "@/lib/store";
 
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { roomCode } = await req.json() as { roomCode?: string };
-  if (!roomCode) return NextResponse.json({ error: "Missing roomCode" }, { status: 400 });
+  const { matchId } = await req.json() as { matchId?: string };
+  if (!matchId) return NextResponse.json({ error: "Missing matchId" }, { status: 400 });
 
   await ensureUserProfile(user.id, user.email ?? "");
 
-  const match = await getMatchByCode(roomCode);
-  if (!match) return NextResponse.json({ error: "Room not found" }, { status: 404 });
+  const match = await getMatch(matchId);
+  if (!match) return NextResponse.json({ error: "Match not found" }, { status: 404 });
   if (match.status !== "waiting") return NextResponse.json({ error: "Match already started" }, { status: 409 });
+
+  // Only the invited user may join
+  if (match.invitedUserId && match.invitedUserId !== user.id) {
+    return NextResponse.json({ error: "You are not invited to this match" }, { status: 403 });
+  }
 
   const participants = await getMatchParticipants(match.id);
 

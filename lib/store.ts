@@ -1064,10 +1064,12 @@ export function generateRoomCode(): string {
 }
 
 function rowToMatchRoom(row: Record<string, unknown>): MatchRoom {
+  const hostProfileRaw = row.user_profiles as Record<string, unknown> | null | undefined;
   return {
     id: row.id as string,
     roomCode: row.room_code as string,
     hostId: row.host_id as string,
+    invitedUserId: (row.invited_user_id as string | null) ?? null,
     documentId: (row.document_id as string | null) ?? null,
     status: row.status as "waiting" | "active" | "completed",
     quizSnapshot: row.quiz_snapshot as QuizQuestion[],
@@ -1076,6 +1078,9 @@ function rowToMatchRoom(row: Record<string, unknown>): MatchRoom {
     startedAt: (row.started_at as string | null) ?? null,
     completedAt: (row.completed_at as string | null) ?? null,
     createdAt: row.created_at as string,
+    hostProfile: hostProfileRaw
+      ? { displayName: hostProfileRaw.display_name as string, username: hostProfileRaw.username as string }
+      : null,
   };
 }
 
@@ -1205,7 +1210,8 @@ export async function getPendingRequests(userId: string): Promise<FriendRequest[
 export async function createMatch(
   hostId: string,
   documentId: string,
-  quizSnapshot: QuizQuestion[]
+  quizSnapshot: QuizQuestion[],
+  invitedUserId?: string
 ): Promise<MatchRoom> {
   const roomCode = generateRoomCode();
   const { data, error } = await supabase
@@ -1216,6 +1222,7 @@ export async function createMatch(
       document_id: documentId,
       quiz_snapshot: quizSnapshot,
       total_questions: quizSnapshot.length,
+      invited_user_id: invitedUserId ?? null,
     })
     .select()
     .single();
@@ -1225,6 +1232,25 @@ export async function createMatch(
     .insert({ room_id: data.id, user_id: hostId });
   if (participantError) throw new Error(`createMatch participant: ${participantError.message}`);
   return rowToMatchRoom(data as Record<string, unknown>);
+}
+
+export async function getPendingInvitations(userId: string): Promise<MatchRoom[]> {
+  const { data, error } = await supabase
+    .from("match_rooms")
+    .select("*, user_profiles!left(display_name, username)")
+    .eq("invited_user_id", userId)
+    .eq("status", "waiting")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`getPendingInvitations: ${error.message}`);
+  return (data ?? []).map((row) => rowToMatchRoom(row as Record<string, unknown>));
+}
+
+export async function cancelMatch(matchId: string): Promise<void> {
+  const { error } = await supabase
+    .from("match_rooms")
+    .delete()
+    .eq("id", matchId);
+  if (error) throw new Error(`cancelMatch: ${error.message}`);
 }
 
 export async function getMatchByCode(code: string): Promise<MatchRoom | null> {
