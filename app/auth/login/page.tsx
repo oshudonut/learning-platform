@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Brain, Mail, Lock, Chrome, AlertCircle } from "lucide-react";
+import { Brain, Mail, Lock, AlertCircle } from "lucide-react";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 
@@ -20,9 +20,6 @@ function LoginPageContent() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState(false);
-
-  const oauthError = searchParams.get("error");
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -40,24 +37,6 @@ function LoginPageContent() {
 
     router.push(next);
     router.refresh();
-  }
-
-  async function handleGoogleLogin() {
-    setOauthLoading(true);
-    const supabase = createSupabaseBrowser();
-    const origin = window.location.origin;
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
-
-    if (error) {
-      setError(error.message);
-      setOauthLoading(false);
-    }
   }
 
   return (
@@ -79,14 +58,6 @@ function LoginPageContent() {
           <h1 className="text-xl font-semibold text-white mb-1">Welcome back</h1>
           <p className="text-sm text-gray-400 mb-6">Sign in to continue learning</p>
 
-          {/* OAuth error from redirect */}
-          {oauthError === "oauth_error" && (
-            <div className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2.5 mb-4">
-              <AlertCircle className="h-4 w-4 text-red-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-400">Google sign-in failed. Please try again.</p>
-            </div>
-          )}
-
           {/* Inline error */}
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2.5 mb-4">
@@ -94,27 +65,6 @@ function LoginPageContent() {
               <p className="text-sm text-red-400">{error}</p>
             </div>
           )}
-
-          {/* Google OAuth */}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full mb-4 border-gray-600 bg-gray-700/50 text-white hover:bg-gray-700"
-            onClick={handleGoogleLogin}
-            disabled={oauthLoading || loading}
-          >
-            <Chrome className="h-4 w-4" />
-            {oauthLoading ? "Redirecting..." : "Continue with Google"}
-          </Button>
-
-          <div className="relative mb-4">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-700" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-gray-800 px-3 text-xs text-gray-500">or continue with email</span>
-            </div>
-          </div>
 
           {/* Email/password form */}
           <form onSubmit={handleEmailLogin} className="space-y-4">
@@ -159,7 +109,7 @@ function LoginPageContent() {
             <Button
               type="submit"
               className="w-full bg-white text-gray-900 hover:bg-gray-100 font-medium"
-              disabled={loading || oauthLoading}
+              disabled={loading}
             >
               {loading ? "Signing in..." : "Sign in"}
             </Button>

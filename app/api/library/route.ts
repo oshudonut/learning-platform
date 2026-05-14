@@ -9,7 +9,9 @@ export async function GET() {
   try {
     const supabase = createSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
-    const docs = await listDocuments(user?.id ?? undefined);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const docs = await listDocuments(user.id);
     return NextResponse.json({ documents: docs });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -19,11 +21,14 @@ export async function GET() {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { id } = (await req.json()) as { id?: string };
-    if (!id) {
-      return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    }
-    await deleteDocument(id);
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+    await deleteDocument(id, user.id);
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

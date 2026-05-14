@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
   Loader2,
-  AlertCircle,
   CheckCircle2,
   X,
   FileText,
@@ -16,6 +15,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ReviewerSetupModal } from "@/components/upload/ReviewerSetupModal";
+import type { LearningMethod } from "@/lib/types";
 
 type FileStatus = "pending" | "uploading" | "done" | "error";
 
@@ -25,6 +26,14 @@ type QueueItem = {
   status: FileStatus;
   error?: string;
   docId?: string;
+};
+
+type FolderOption = { id: string; name: string; color: string };
+
+type SetupPending = {
+  docId: string;
+  defaultTitle: string;
+  folders: FolderOption[];
 };
 
 function fileIcon(name: string) {
@@ -78,6 +87,7 @@ export function UploadZone() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [ocrEnabled, setOcrEnabled] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [setupPending, setSetupPending] = useState<SetupPending | null>(null);
 
   const addFiles = useCallback((files: File[]) => {
     const items: QueueItem[] = files.map((f) => ({
@@ -108,6 +118,7 @@ export function UploadZone() {
 
     setProcessing(true);
     let firstDocId: string | null = null;
+    let firstTitle: string | null = null;
 
     for (const item of pending) {
       setQueue((prev) =>
@@ -124,10 +135,10 @@ export function UploadZone() {
           const err = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(err.error ?? `Upload failed (${res.status})`);
         }
-        const { id } = await res.json() as { id: string };
-        if (!firstDocId) firstDocId = id;
+        const data = await res.json() as { id: string; title: string };
+        if (!firstDocId) { firstDocId = data.id; firstTitle = data.title; }
         setQueue((prev) =>
-          prev.map((q) => (q.id === item.id ? { ...q, status: "done", docId: id } : q)),
+          prev.map((q) => (q.id === item.id ? { ...q, status: "done", docId: data.id } : q)),
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -139,15 +150,74 @@ export function UploadZone() {
 
     setProcessing(false);
 
-    if (firstDocId) {
-      router.push(`/document/${firstDocId}`);
+    if (firstDocId && firstTitle) {
+      // Fetch folders to show in setup modal
+      let folders: FolderOption[] = [];
+      try {
+        const res = await fetch("/api/folders");
+        if (res.ok) {
+          const data = await res.json() as { folders?: FolderOption[] };
+          folders = data.folders ?? [];
+        }
+      } catch { /* ignore — modal still works with empty folder list */ }
+
+      setSetupPending({ docId: firstDocId, defaultTitle: firstTitle, folders });
     }
-  }, [queue, ocrEnabled, router]);
+  }, [queue, ocrEnabled]);
+
+  async function handleSetupConfirm(opts: {
+    reviewerName: string;
+    folderId: string | null;
+    learningMethod: LearningMethod | null;
+  }) {
+    if (!setupPending) return;
+    const { docId, defaultTitle } = setupPending;
+
+    try {
+      if (opts.reviewerName !== defaultTitle) {
+        await fetch("/api/folders", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "rename_document", docId, title: opts.reviewerName }),
+        });
+      }
+      if (opts.folderId) {
+        await fetch("/api/folders", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "move_document", docId, folderId: opts.folderId }),
+        });
+      }
+    } catch { /* non-critical — still navigate */ }
+
+    setSetupPending(null);
+    const params = opts.learningMethod ? `?method=${opts.learningMethod}` : "";
+    router.push(`/document/${docId}${params}`);
+  }
+
+  function handleSetupCancel() {
+    if (!setupPending) return;
+    const docId = setupPending.docId;
+    setSetupPending(null);
+    router.push(`/document/${docId}`);
+  }
 
   const pendingCount = queue.filter((q) => q.status === "pending").length;
   const isEmpty = queue.length === 0;
 
   return (
+    <>
+    <AnimatePresence>
+      {setupPending && (
+        <ReviewerSetupModal
+          docId={setupPending.docId}
+          defaultTitle={setupPending.defaultTitle}
+          folders={setupPending.folders}
+          onConfirm={handleSetupConfirm}
+          onCancel={handleSetupCancel}
+        />
+      )}
+    </AnimatePresence>
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
@@ -254,5 +324,6 @@ export function UploadZone() {
         </p>
       )}
     </motion.div>
+    </>
   );
 }

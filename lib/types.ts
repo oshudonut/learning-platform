@@ -434,6 +434,7 @@ export type Document = {
   contentHash?: string;
   createdAt: number;
   userId?: string | null;
+  folderId?: string | null;
   workspaceId?: string | null;
   reviewer?: AnyReviewer;
   quiz?: Quiz;
@@ -464,6 +465,17 @@ export type Workspace = {
   description: string | null;
   color: string;           // tailwind color name e.g. "blue", "purple"
   createdAt: number;
+};
+
+// ─── Folder ───────────────────────────────────────────────────────────────────
+
+export type Folder = {
+  id: string;
+  userId: string;
+  name: string;
+  color: string;
+  createdAt: number;
+  updatedAt: number | null;
 };
 
 export type StudyGroup = {

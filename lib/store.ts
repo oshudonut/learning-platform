@@ -25,6 +25,7 @@ import type {
   MatchParticipant,
   MatchAnswer,
   QuizQuestion,
+  Folder,
 } from "./types";
 export { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
 import { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
@@ -42,6 +43,7 @@ function toRow(doc: Document) {
     content_hash: doc.contentHash ?? null,
     created_at: doc.createdAt,
     user_id: doc.userId ?? null,
+    folder_id: doc.folderId ?? null,
     reviewer: doc.reviewer ?? null,
     quiz: doc.quiz ?? null,
     flashcards: doc.flashcards ?? null,
@@ -60,6 +62,7 @@ function fromRow(row: Record<string, unknown>): Document {
     contentHash: (row.content_hash as string | null) ?? undefined,
     createdAt: row.created_at as number,
     userId: (row.user_id as string | null) ?? null,
+    folderId: (row.folder_id as string | null) ?? null,
     reviewer: (row.reviewer as Document["reviewer"]) ?? undefined,
     quiz: (row.quiz as Document["quiz"]) ?? undefined,
     flashcards: (row.flashcards as Document["flashcards"]) ?? undefined,
@@ -111,26 +114,26 @@ export async function updateDocument(
   return updated;
 }
 
-export async function deleteDocument(id: string): Promise<void> {
-  const { error } = await supabase.from("documents").delete().eq("id", id);
+export async function deleteDocument(id: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("documents")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
   if (error) throw new Error(`deleteDocument: ${error.message}`);
 }
 
-export async function listDocuments(userId?: string): Promise<
+export async function listDocuments(userId: string): Promise<
   Array<Omit<Document, "text" | "reviewer" | "quiz" | "flashcards">>
 > {
-  let query = supabase
+  const { data, error } = await supabase
     .from("documents")
     .select(
-      "id, title, filename, text_length, content_hash, created_at, user_id, flashcard_review_states, chunks, reviewer, quiz, flashcards",
+      "id, title, filename, text_length, content_hash, created_at, user_id, folder_id, flashcard_review_states, chunks, reviewer, quiz, flashcards",
     )
+    .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  if (userId) {
-    query = query.eq("user_id", userId);
-  }
-
-  const { data, error } = await query;
   if (error) throw new Error(`listDocuments: ${error.message}`);
 
   return (data ?? []).map((row) => {
@@ -145,6 +148,8 @@ export async function listDocuments(userId?: string): Promise<
       textLength: r.text_length as number,
       contentHash: (r.content_hash as string | null) ?? undefined,
       createdAt: r.created_at as number,
+      userId: (r.user_id as string | null) ?? null,
+      folderId: (r.folder_id as string | null) ?? null,
       flashcardReviewStates:
         (r.flashcard_review_states as Document["flashcardReviewStates"]) ??
         undefined,
@@ -298,7 +303,30 @@ function calcStreak(currentStreak: number, lastStudied: number | null): number {
   return 1;
 }
 
-export async function recordQuizAttempt(attempt: QuizAttempt): Promise<void> {
+async function _updateAnalyticsMeta(userId: string, studyMinutes: number): Promise<void> {
+  const { data: meta } = await supabase
+    .from("analytics_meta")
+    .select("study_streak, last_studied, total_study_time")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const now = Date.now();
+  const m = meta as { study_streak: number; last_studied: number | null; total_study_time: number } | null;
+  const newStreak = m ? calcStreak(m.study_streak, m.last_studied) : 1;
+
+  const { error } = await supabase.from("analytics_meta").upsert(
+    {
+      user_id: userId,
+      study_streak: newStreak,
+      last_studied: now,
+      total_study_time: (m?.total_study_time ?? 0) + studyMinutes,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw new Error(`_updateAnalyticsMeta: ${error.message}`);
+}
+
+export async function recordQuizAttempt(attempt: QuizAttempt, userId: string): Promise<void> {
   const { error: insertError } = await supabase.from("quiz_attempts").insert({
     quiz_id: attempt.quizId,
     document_id: attempt.documentId,
@@ -308,81 +336,45 @@ export async function recordQuizAttempt(attempt: QuizAttempt): Promise<void> {
     correct_answers: attempt.correctAnswers,
     weak_topics: attempt.weakTopics,
     completed_at: attempt.completedAt,
+    user_id: userId,
   });
   if (insertError) throw new Error(`recordQuizAttempt insert: ${insertError.message}`);
-
-  const { data: meta, error: metaError } = await supabase
-    .from("analytics_meta")
-    .select("study_streak, last_studied, total_study_time")
-    .eq("id", 1)
-    .single();
-  if (metaError) throw new Error(`recordQuizAttempt meta read: ${metaError.message}`);
-
-  const m = meta as { study_streak: number; last_studied: number | null; total_study_time: number };
-  const newStreak = calcStreak(m.study_streak, m.last_studied);
-  const now = Date.now();
-
-  const { error: upsertError } = await supabase.from("analytics_meta").upsert({
-    id: 1,
-    study_streak: newStreak,
-    last_studied: now,
-    total_study_time: m.total_study_time + 5,
-  });
-  if (upsertError) throw new Error(`recordQuizAttempt meta upsert: ${upsertError.message}`);
+  await _updateAnalyticsMeta(userId, 5);
 }
 
 export async function recordFlashcardSession(
   session: FlashcardSession,
+  userId: string,
 ): Promise<void> {
-  const { error: insertError } = await supabase
-    .from("flashcard_sessions")
-    .insert({
-      document_id: session.documentId,
-      document_title: session.documentTitle,
-      cards_studied: session.cardsStudied,
-      avg_quality: session.avgQuality,
-      completed_at: session.completedAt,
-    });
-  if (insertError)
-    throw new Error(`recordFlashcardSession insert: ${insertError.message}`);
-
-  const { data: meta, error: metaError } = await supabase
-    .from("analytics_meta")
-    .select("study_streak, last_studied, total_study_time")
-    .eq("id", 1)
-    .single();
-  if (metaError)
-    throw new Error(`recordFlashcardSession meta read: ${metaError.message}`);
-
-  const m = meta as { study_streak: number; last_studied: number | null; total_study_time: number };
-  const newStreak = calcStreak(m.study_streak, m.last_studied);
-  const now = Date.now();
-
-  const { error: upsertError } = await supabase.from("analytics_meta").upsert({
-    id: 1,
-    study_streak: newStreak,
-    last_studied: now,
-    total_study_time: m.total_study_time + Math.ceil(session.cardsStudied * 0.5),
+  const { error: insertError } = await supabase.from("flashcard_sessions").insert({
+    document_id: session.documentId,
+    document_title: session.documentTitle,
+    cards_studied: session.cardsStudied,
+    avg_quality: session.avgQuality,
+    completed_at: session.completedAt,
+    user_id: userId,
   });
-  if (upsertError)
-    throw new Error(`recordFlashcardSession meta upsert: ${upsertError.message}`);
+  if (insertError) throw new Error(`recordFlashcardSession insert: ${insertError.message}`);
+  await _updateAnalyticsMeta(userId, Math.ceil(session.cardsStudied * 0.5));
 }
 
-export async function getAnalytics(): Promise<Analytics> {
+export async function getAnalytics(userId: string): Promise<Analytics> {
   const [quizRes, flashRes, metaRes] = await Promise.all([
     supabase
       .from("quiz_attempts")
       .select("*")
+      .eq("user_id", userId)
       .order("completed_at", { ascending: false }),
     supabase
       .from("flashcard_sessions")
       .select("*")
+      .eq("user_id", userId)
       .order("completed_at", { ascending: false }),
     supabase
       .from("analytics_meta")
       .select("study_streak, last_studied, total_study_time")
-      .eq("id", 1)
-      .single(),
+      .eq("user_id", userId)
+      .maybeSingle(),
   ]);
 
   if (quizRes.error) throw new Error(`getAnalytics quiz: ${quizRes.error.message}`);
@@ -418,14 +410,14 @@ export async function getAnalytics(): Promise<Analytics> {
     study_streak: number;
     last_studied: number | null;
     total_study_time: number;
-  };
+  } | null;
 
   return {
     quizAttempts,
     flashcardSessions,
-    studyStreak: m.study_streak,
-    lastStudied: m.last_studied,
-    totalStudyTime: m.total_study_time,
+    studyStreak: m?.study_streak ?? 0,
+    lastStudied: m?.last_studied ?? null,
+    totalStudyTime: m?.total_study_time ?? 0,
   };
 }
 
@@ -1370,4 +1362,87 @@ export async function getMatchAnswers(roomId: string): Promise<MatchAnswer[]> {
     .order("answered_at", { ascending: true });
   if (error) throw new Error(`getMatchAnswers: ${error.message}`);
   return (data ?? []).map((row) => rowToAnswer(row as Record<string, unknown>));
+}
+
+// ─── Folders ──────────────────────────────────────────────────────────────────
+
+function rowToFolder(row: Record<string, unknown>): Folder {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    name: row.name as string,
+    color: (row.color as string) ?? "blue",
+    createdAt: row.created_at as number,
+    updatedAt: (row.updated_at as number | null) ?? null,
+  };
+}
+
+export async function createFolder(userId: string, name: string, color = "blue"): Promise<Folder> {
+  const { data, error } = await supabase
+    .from("folders")
+    .insert({ id: randomId(), user_id: userId, name, color, created_at: Date.now() })
+    .select()
+    .single();
+  if (error) throw new Error(`createFolder: ${error.message}`);
+  return rowToFolder(data as Record<string, unknown>);
+}
+
+export async function listFolders(userId: string): Promise<Folder[]> {
+  const { data, error } = await supabase
+    .from("folders")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`listFolders: ${error.message}`);
+  return (data ?? []).map((r) => rowToFolder(r as Record<string, unknown>));
+}
+
+export async function updateFolder(
+  id: string,
+  userId: string,
+  patch: Partial<Pick<Folder, "name" | "color">>,
+): Promise<Folder> {
+  const update: Record<string, unknown> = { updated_at: Date.now() };
+  if (patch.name !== undefined) update.name = patch.name;
+  if (patch.color !== undefined) update.color = patch.color;
+  const { data, error } = await supabase
+    .from("folders")
+    .update(update)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateFolder: ${error.message}`);
+  return rowToFolder(data as Record<string, unknown>);
+}
+
+export async function deleteFolder(id: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("folders")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw new Error(`deleteFolder: ${error.message}`);
+}
+
+export async function moveDocumentToFolder(
+  docId: string,
+  userId: string,
+  folderId: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("documents")
+    .update({ folder_id: folderId })
+    .eq("id", docId)
+    .eq("user_id", userId);
+  if (error) throw new Error(`moveDocumentToFolder: ${error.message}`);
+}
+
+export async function renameDocument(docId: string, userId: string, title: string): Promise<void> {
+  const { error } = await supabase
+    .from("documents")
+    .update({ title })
+    .eq("id", docId)
+    .eq("user_id", userId);
+  if (error) throw new Error(`renameDocument: ${error.message}`);
 }

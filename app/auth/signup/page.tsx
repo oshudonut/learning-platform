@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Brain, Mail, Lock, Chrome, AlertCircle, CheckCircle } from "lucide-react";
+import { Brain, Mail, Lock, AlertCircle, CheckCircle } from "lucide-react";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 
@@ -13,7 +13,6 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState(false);
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
@@ -48,24 +47,6 @@ export default function SignupPage() {
 
     setSuccess(true);
     setLoading(false);
-  }
-
-  async function handleGoogleSignup() {
-    setOauthLoading(true);
-    const supabase = createSupabaseBrowser();
-    const origin = window.location.origin;
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${origin}/auth/callback`,
-      },
-    });
-
-    if (error) {
-      setError(error.message);
-      setOauthLoading(false);
-    }
   }
 
   if (success) {
@@ -120,27 +101,6 @@ export default function SignupPage() {
               <p className="text-sm text-red-400">{error}</p>
             </div>
           )}
-
-          {/* Google OAuth */}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full mb-4 border-gray-600 bg-gray-700/50 text-white hover:bg-gray-700"
-            onClick={handleGoogleSignup}
-            disabled={oauthLoading || loading}
-          >
-            <Chrome className="h-4 w-4" />
-            {oauthLoading ? "Redirecting..." : "Continue with Google"}
-          </Button>
-
-          <div className="relative mb-4">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-700" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-gray-800 px-3 text-xs text-gray-500">or continue with email</span>
-            </div>
-          </div>
 
           <form onSubmit={handleSignup} className="space-y-4">
             <div>
@@ -203,7 +163,7 @@ export default function SignupPage() {
             <Button
               type="submit"
               className="w-full bg-white text-gray-900 hover:bg-gray-100 font-medium"
-              disabled={loading || oauthLoading}
+              disabled={loading}
             >
               {loading ? "Creating account..." : "Create account"}
             </Button>

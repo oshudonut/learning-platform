@@ -4,6 +4,7 @@ import { Brain, Sparkles, BookOpen, Layers, BarChart3, ArrowRight, Zap } from "l
 import { UploadZone } from "@/components/upload-zone";
 import { AppShell } from "@/components/layout/AppShell";
 import { listDocuments } from "@/lib/store";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { formatDistanceToNow } from "@/lib/utils";
 
 type DocSummary = Awaited<ReturnType<typeof listDocuments>>[number] & {
@@ -14,7 +15,10 @@ type DocSummary = Awaited<ReturnType<typeof listDocuments>>[number] & {
 async function RecentDocuments() {
   let docs: DocSummary[] = [];
   try {
-    docs = (await listDocuments()) as DocSummary[];
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    docs = (await listDocuments(user.id)) as DocSummary[];
   } catch {
     return null;
   }

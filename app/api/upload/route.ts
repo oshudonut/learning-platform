@@ -61,6 +61,8 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const file = form.get("file");
     const forceOcr = form.get("ocr") === "true";
+    const reviewerName = (form.get("reviewerName") as string | null)?.trim() || null;
+    const folderId = (form.get("folderId") as string | null) || null;
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -131,10 +133,11 @@ export async function POST(req: NextRequest) {
     const chunks = chunkText(text);
     const id = randomId();
 
-    const title = file.name
+    const derivedTitle = file.name
       .replace(/\.(pdf|docx|png|jpe?g|webp)$/i, "")
       .replace(/[-_]+/g, " ")
       .trim();
+    const title = reviewerName ?? derivedTitle;
 
     await saveDocument({
       id,
@@ -144,6 +147,7 @@ export async function POST(req: NextRequest) {
       textLength: text.length,
       createdAt: Date.now(),
       userId: user?.id ?? null,
+      folderId: folderId ?? null,
     });
 
     await saveChunks(id, chunks);
