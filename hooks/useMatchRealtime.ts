@@ -44,6 +44,7 @@ export function useMatchRealtime(
     const channel = supabase
       .channel(`match:${matchId}`)
       // ── match_rooms ──────────────────────────────────────────────────────────
+      // Filter on PK (id) — safe without REPLICA IDENTITY FULL
       .on(
         "postgres_changes" as const,
         { event: "*", schema: "public", table: "match_rooms", filter: `id=eq.${matchId}` },
@@ -58,23 +59,28 @@ export function useMatchRealtime(
         }
       )
       // ── match_participants ────────────────────────────────────────────────────
+      // NO server-side filter: room_id is not the PK, so Supabase Realtime
+      // requires REPLICA IDENTITY FULL to filter on it — without that setting,
+      // events are silently dropped. Subscribe to all rows and filter client-side.
       .on(
         "postgres_changes" as const,
-        { event: "*", schema: "public", table: "match_participants", filter: `room_id=eq.${matchId}` },
+        { event: "*", schema: "public", table: "match_participants" },
         (payload) => {
+          const row = (payload.eventType === "DELETE" ? payload.old : payload.new) as Record<string, unknown>;
+          if (row.room_id !== matchId) return; // client-side filter
           if (payload.eventType === "INSERT") {
-            const row = payload.new as Record<string, unknown>;
+            const newRow = payload.new as Record<string, unknown>;
             setParticipants((prev) => {
-              if (prev.find((p) => p.id === row.id)) return prev; // dedupe
+              if (prev.find((p) => p.id === newRow.id)) return prev; // dedupe
               return [
                 ...prev,
                 {
-                  id: row.id as string,
-                  roomId: row.room_id as string,
-                  userId: row.user_id as string,
-                  score: (row.score as number) ?? 0,
-                  isReady: (row.is_ready as boolean) ?? false,
-                  joinedAt: row.joined_at as string,
+                  id: newRow.id as string,
+                  roomId: newRow.room_id as string,
+                  userId: newRow.user_id as string,
+                  score: (newRow.score as number) ?? 0,
+                  isReady: (newRow.is_ready as boolean) ?? false,
+                  joinedAt: newRow.joined_at as string,
                   profile: undefined, // profile fetched via onNewParticipant → fetchState
                 },
               ];
@@ -82,20 +88,23 @@ export function useMatchRealtime(
             // Trigger a full refresh so the lobby gets participant display names
             onNewParticipantRef.current?.();
           } else if (payload.eventType === "UPDATE") {
-            const row = payload.new as Record<string, unknown>;
-            const updates = mapParticipantPayload(row);
+            const newRow = payload.new as Record<string, unknown>;
+            const updates = mapParticipantPayload(newRow);
             setParticipants((prev) =>
-              prev.map((p) => (p.id === row.id ? { ...p, ...updates } : p))
+              prev.map((p) => (p.id === newRow.id ? { ...p, ...updates } : p))
             );
           }
         }
       )
       // ── match_answers ─────────────────────────────────────────────────────────
+      // NO server-side filter: same reason as match_participants above.
       .on(
         "postgres_changes" as const,
-        { event: "INSERT", schema: "public", table: "match_answers", filter: `room_id=eq.${matchId}` },
+        { event: "INSERT", schema: "public", table: "match_answers" },
         (payload) => {
-          const answer = mapAnswerPayload(payload.new as Record<string, unknown>);
+          const row = payload.new as Record<string, unknown>;
+          if (row.room_id !== matchId) return; // client-side filter
+          const answer = mapAnswerPayload(row);
           setAnswers((prev) => [...prev, answer]);
         }
       )
