@@ -1256,9 +1256,14 @@ export async function getMatch(id: string): Promise<MatchRoom | null> {
 }
 
 export async function joinMatch(roomId: string, userId: string): Promise<void> {
+  // upsert with ignoreDuplicates so a double-join (auto-join race on mount) is a no-op
+  // rather than throwing a unique-constraint error that surfaces as a 500.
   const { error } = await supabase
     .from("match_participants")
-    .insert({ room_id: roomId, user_id: userId });
+    .upsert(
+      { room_id: roomId, user_id: userId },
+      { onConflict: "room_id,user_id", ignoreDuplicates: true }
+    );
   if (error) throw new Error(`joinMatch: ${error.message}`);
 }
 

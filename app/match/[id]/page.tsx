@@ -107,8 +107,11 @@ export default function MatchPage() {
   }, [params.id, fetchState]);
 
   // Auto-join on page load: attempt silently if the user is not yet a participant.
+  // Gate on `loading === false` so participants is authoritative DB state, not the
+  // empty default — prevents a double-join race (ChallengeProvider join + auto-join).
   const hasAutoJoinedRef = useRef(false);
   useEffect(() => {
+    if (loading) return;
     if (!match || !user) return;
     if (hasAutoJoinedRef.current) return;
     if (match.status !== "waiting") return;
@@ -116,7 +119,7 @@ export default function MatchPage() {
     if (alreadyIn) return;
     hasAutoJoinedRef.current = true;
     handleJoin();
-  }, [match, participants, user, handleJoin]);
+  }, [loading, match, participants, user, handleJoin]);
 
   // Single fetch on mount — realtime takes over from here
   useEffect(() => {
@@ -154,9 +157,19 @@ export default function MatchPage() {
   // ── Handlers ─────────────────────────────────────────────────────────────────
   async function handleReady() {
     setReadying(true);
-    await fetch(`/api/match/${params.id}/ready`, { method: "POST" });
-    setReadying(false);
-    fetchState();
+    try {
+      const res = await fetch(`/api/match/${params.id}/ready`, { method: "POST" });
+      if (res.ok) {
+        fetchState();
+      } else {
+        // Don't call fetchState on error — it would overwrite optimistic UI and
+        // show "Ready Up" again without user action. Just log and reset spinner.
+        const data = await res.json().catch(() => ({}));
+        console.error("[handleReady] server error:", data.error);
+      }
+    } finally {
+      setReadying(false);
+    }
   }
 
   async function handleAnswer(choice: string) {
