@@ -116,11 +116,12 @@ export async function getDocument(id: string, userId: string): Promise<Document 
   return fromRow(data as Record<string, unknown>);
 }
 
-export async function getDocumentTitle(id: string): Promise<string | null> {
+export async function getDocumentTitle(id: string, userId: string): Promise<string | null> {
   const { data, error } = await supabase
     .from("documents")
     .select("title")
     .eq("id", id)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`getDocumentTitle: ${error.message}`);
   return (data?.title as string | null) ?? null;
@@ -311,11 +312,12 @@ export async function listConversations(
   });
 }
 
-export async function deleteConversation(id: string): Promise<void> {
+export async function deleteConversation(id: string, userId: string): Promise<void> {
   const { error } = await supabase
     .from("conversations")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", userId);
   if (error) throw new Error(`deleteConversation: ${error.message}`);
 }
 

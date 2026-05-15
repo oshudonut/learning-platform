@@ -13,9 +13,9 @@ export async function GET() {
   const enriched = await Promise.all(
     invitations.map(async (inv) => {
       let documentTitle = "Untitled document";
-      if (inv.documentId) {
+      if (inv.documentId && inv.hostId) {
         try {
-          const title = await getDocumentTitle(inv.documentId);
+          const title = await getDocumentTitle(inv.documentId, inv.hostId);
           if (title) documentTitle = title;
         } catch {
           // ignore — fallback title is fine
