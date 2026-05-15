@@ -125,12 +125,33 @@ export function UploadZone() {
         prev.map((q) => (q.id === item.id ? { ...q, status: "uploading" } : q)),
       );
 
-      const form = new FormData();
-      form.append("file", item.file);
-      if (ocrEnabled) form.append("ocr", "true");
-
       try {
-        const res = await fetch("/api/upload", { method: "POST", body: form });
+        // Step 1: Get a signed storage upload URL (bypasses Vercel's 4.5 MB body limit)
+        const presignRes = await fetch("/api/upload/presign", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ filename: item.file.name }),
+        });
+        if (!presignRes.ok) {
+          const err = await presignRes.json().catch(() => ({})) as { error?: string };
+          throw new Error(err.error ?? "Failed to prepare upload");
+        }
+        const { uploadUrl, storageKey } = await presignRes.json() as { uploadUrl: string; storageKey: string };
+
+        // Step 2: Upload the file directly to Supabase Storage — no Vercel function in the path
+        const putRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: item.file,
+          headers: { "content-type": item.file.type || "application/octet-stream" },
+        });
+        if (!putRes.ok) throw new Error("Storage upload failed");
+
+        // Step 3: Trigger server-side processing with a tiny JSON payload
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ storageKey, filename: item.file.name, ocr: ocrEnabled }),
+        });
         if (!res.ok) {
           const err = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(err.error ?? `Upload failed (${res.status})`);

@@ -5,6 +5,7 @@ import { ocrPdfWithVision } from "@/lib/claude";
 import { saveDocument, saveChunks } from "@/lib/store";
 import { randomId } from "@/lib/utils";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { supabase as admin } from "@/lib/supabase";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 
@@ -13,14 +14,7 @@ export const maxDuration = 60;
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const TEXT_STORE_CAP = 60_000;
-
-const ACCEPTED_TYPES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-]);
+const BUCKET = "temp-uploads";
 
 const ACCEPTED_EXTS = new Set([".pdf", ".docx", ".png", ".jpg", ".jpeg", ".webp"]);
 
@@ -59,31 +53,53 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const form = await req.formData();
-    const file = form.get("file");
-    const forceOcr = form.get("ocr") === "true";
-    const reviewerName = (form.get("reviewerName") as string | null)?.trim() || null;
-    const folderId = (form.get("folderId") as string | null) || null;
+    const body = await req.json() as {
+      storageKey: string;
+      filename: string;
+      ocr?: boolean;
+      reviewerName?: string;
+      folderId?: string;
+    };
 
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    const { storageKey, filename, ocr: forceOcr = false } = body;
+    const reviewerName = body.reviewerName?.trim() || null;
+    const folderId = body.folderId || null;
+
+    if (!storageKey || !filename) {
+      return NextResponse.json({ error: "storageKey and filename are required" }, { status: 400 });
     }
 
-    const fileExt = ext(file.name);
+    // Validate the key belongs to this user
+    if (!storageKey.startsWith(`${user.id}/`)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const fileExt = ext(filename);
     if (!ACCEPTED_EXTS.has(fileExt)) {
       return NextResponse.json(
         { error: `Unsupported file type. Accepted: PDF, DOCX, PNG, JPG, WEBP` },
         { status: 400 },
       );
     }
-    if (file.size > MAX_BYTES) {
+
+    // Download the file from temporary storage
+    const { data: blob, error: downloadError } = await admin.storage
+      .from(BUCKET)
+      .download(storageKey);
+
+    if (downloadError || !blob) {
+      return NextResponse.json({ error: "Could not retrieve uploaded file" }, { status: 500 });
+    }
+
+    const fileBytes = await blob.arrayBuffer();
+    if (fileBytes.byteLength > MAX_BYTES) {
       return NextResponse.json(
         { error: `File too large (max ${MAX_BYTES / 1024 / 1024}MB)` },
         { status: 413 },
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = Buffer.from(fileBytes);
     let text = "";
     let pages = 0;
     let ocrUsed = false;
@@ -119,8 +135,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Could not extract text from DOCX file." }, { status: 422 });
       }
     } else {
-      // Image file — always use vision OCR
-      const mimeType = file.type || (fileExt === ".png" ? "image/png" : fileExt === ".webp" ? "image/webp" : "image/jpeg");
+      const mimeType = fileExt === ".png" ? "image/png" : fileExt === ".webp" ? "image/webp" : "image/jpeg";
       try {
         text = await ocrImageWithVision(buffer, mimeType);
         ocrUsed = true;
@@ -134,7 +149,7 @@ export async function POST(req: NextRequest) {
     const chunks = chunkText(text);
     const id = randomId();
 
-    const derivedTitle = file.name
+    const derivedTitle = filename
       .replace(/\.(pdf|docx|png|jpe?g|webp)$/i, "")
       .replace(/[-_]+/g, " ")
       .trim();
@@ -143,7 +158,7 @@ export async function POST(req: NextRequest) {
     await saveDocument({
       id,
       title,
-      filename: file.name,
+      filename,
       text: storedText,
       textLength: text.length,
       createdAt: Date.now(),
@@ -152,6 +167,9 @@ export async function POST(req: NextRequest) {
     });
 
     await saveChunks(id, user.id, chunks);
+
+    // Clean up temp storage — fire-and-forget, non-critical
+    admin.storage.from(BUCKET).remove([storageKey]).catch(() => {});
 
     return NextResponse.json({
       id,
