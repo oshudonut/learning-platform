@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
 import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig } from "@/lib/prompts";
-import { getDocument, updateDocument, computeContentHash, getProgression } from "@/lib/store";
+import { getDocument, updateDocument, computeContentHash, getProgression, upsertProgression } from "@/lib/store";
+import { buildInitialProgression } from "@/lib/progression";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import {
   ReviewerSchema,
@@ -89,10 +90,31 @@ export async function POST(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await updateDocument(id, user.id, { reviewer: parsed as any, contentHash: incomingHash });
 
+    // Reset learning cycle when regenerating with an explicit methodology.
+    // Error-recovery retries (force=true, no learningMethod in request) are excluded —
+    // those didn't produce a new reviewer on the previous attempt, so progress is still valid.
+    let progressionReset = false;
+    if (force && learningMethod) {
+      const topicCount = ((parsed as { topics?: unknown[] }).topics?.length) ?? 0;
+      const prev = await getProgression(id, user.id);
+      const fresh = buildInitialProgression(id, topicCount);
+      // Carry forward method selections from this request
+      fresh.learningMethod = resolvedMethod ?? null;
+      fresh.studyMode = resolvedMode ?? null;
+      // Preserve mastery history and document identity, reset everything else
+      if (prev) {
+        fresh.masteredAt = prev.masteredAt;
+        fresh.createdAt = prev.createdAt;
+      }
+      await upsertProgression(fresh);
+      progressionReset = true;
+    }
+
     return NextResponse.json({
       reviewer: parsed,
       cached: false,
       schemaType,
+      progressionReset,
       usage: { cacheReadTokens, cacheWriteTokens },
     });
   } catch (err: unknown) {

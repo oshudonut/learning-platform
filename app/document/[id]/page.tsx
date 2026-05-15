@@ -159,7 +159,7 @@ function DocumentPageInner() {
       setReviewer({ status: "success", data: data.reviewer });
       if (!doc?.hasReviewer) setDoc((d) => d && { ...d, hasReviewer: true });
 
-      // Initialize/refresh progression for new reviewer
+      // Re-fetch progression after force-regeneration so client reflects the server reset
       if (force || !progression) {
         const progRes = await fetch("/api/progression", {
           method: "POST",
@@ -167,7 +167,10 @@ function DocumentPageInner() {
           body: JSON.stringify({ action: "get", documentId: id }),
         });
         const progData = await progRes.json();
-        if (progData.progression) setProgression(progData.progression);
+        if (progData.progression) {
+          setProgression(progData.progression);
+          setRemediationActive(progData.progression.remediationActive);
+        }
       }
     } catch (err) {
       setReviewer({ status: "error", error: (err as Error).message });
@@ -429,6 +432,7 @@ function DocumentPageInner() {
                             if (confirm("Regenerating will reset your section progress. Continue?")) {
                               setReviewer({ status: "idle" });
                               setProgression(null);
+                              setRemediationActive(false);
                             }
                           }}
                           className="text-muted-foreground hover:text-foreground"
