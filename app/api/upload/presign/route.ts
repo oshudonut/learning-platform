@@ -16,12 +16,6 @@ export async function POST(req: NextRequest) {
   const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const storageKey = `${user.id}/${Date.now()}-${safe}`;
 
-  // Ensure bucket exists — idempotent, ignores "already exists" error
-  await admin.storage.createBucket(BUCKET, {
-    public: false,
-    fileSizeLimit: 26_214_400,
-  }).catch(() => {});
-
   const { data, error } = await admin.storage
     .from(BUCKET)
     .createSignedUploadUrl(storageKey);

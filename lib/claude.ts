@@ -10,6 +10,7 @@ export const claude = new Anthropic({ apiKey });
 
 export const MODEL = "claude-sonnet-4-5";
 export const TUTOR_MODEL = "claude-sonnet-4-5";
+export const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
 type GenerateOpts<S extends z.ZodTypeAny> = {
   schema: S;
@@ -18,6 +19,7 @@ type GenerateOpts<S extends z.ZodTypeAny> = {
   taskInstruction: string;
   maxTokens?: number;
   compressedText?: string;
+  model?: string;
 };
 
 export function compressDocumentForReview(text: string, maxChars = 4000): string {
@@ -69,13 +71,14 @@ export async function generateStructured<S extends z.ZodTypeAny>({
   taskInstruction,
   maxTokens = 8000,
   compressedText,
+  model,
 }: GenerateOpts<S>): Promise<{
   parsed: z.infer<S>;
   cacheReadTokens: number;
   cacheWriteTokens: number;
 }> {
   const response = await claude.messages.create({
-    model: MODEL,
+    model: model ?? MODEL,
     max_tokens: maxTokens,
     system: [
       { type: "text", text: systemPreamble },
@@ -134,7 +137,7 @@ export async function streamTutorResponse({
   return claude.messages.stream({
     model: TUTOR_MODEL,
     max_tokens: maxTokens,
-    system: systemPrompt,
+    system: [{ type: "text" as const, text: systemPrompt, cache_control: { type: "ephemeral" } }],
     messages,
   });
 }

@@ -130,6 +130,7 @@ export async function POST(req: NextRequest) {
           controller.close();
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+          console.error("[tutor] streaming error:", msg);
           controller.enqueue(
             new TextEncoder().encode(`data: ${JSON.stringify({ error: msg })}\n`),
           );

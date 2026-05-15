@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
     if (!documentId) return NextResponse.json({ error: "documentId required" }, { status: 400 });
 
     if (action === "get") {
+      const doc = await getDocument(documentId, user.id);
+      if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
       const result = await getLatestRemediationReviewer(documentId);
       return NextResponse.json({ remediation: result });
     }
@@ -113,6 +115,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error("[remediation] error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

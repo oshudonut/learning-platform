@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { extractPdfText, chunkText } from "@/lib/pdf";
-import { ocrPdfWithVision } from "@/lib/claude";
+import { ocrPdfWithVision, MODEL } from "@/lib/claude";
 import { saveDocument, saveChunks } from "@/lib/store";
 import { randomId } from "@/lib/utils";
 import { createSupabaseServer } from "@/lib/supabase-server";
@@ -26,7 +26,7 @@ async function ocrImageWithVision(buffer: Buffer, mimeType: string): Promise<str
   const client = new Anthropic();
   const b64 = buffer.toString("base64");
   const response = await client.messages.create({
-    model: "claude-opus-4-5",
+    model: MODEL,
     max_tokens: 8000,
     messages: [
       {
@@ -48,6 +48,7 @@ async function ocrImageWithVision(buffer: Buffer, mimeType: string): Promise<str
 }
 
 export async function POST(req: NextRequest) {
+  let resolvedKey: string | undefined;
   try {
     const supabase = createSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
@@ -69,10 +70,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "storageKey and filename are required" }, { status: 400 });
     }
 
-    // Validate the key belongs to this user
+    // Validate ownership BEFORE setting resolvedKey — forbidden path must not clean up another user's file
     if (!storageKey.startsWith(`${user.id}/`)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    resolvedKey = storageKey;
 
     const fileExt = ext(filename);
     if (!ACCEPTED_EXTS.has(fileExt)) {
@@ -82,7 +85,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Download the file from temporary storage
     const { data: blob, error: downloadError } = await admin.storage
       .from(BUCKET)
       .download(storageKey);
@@ -168,9 +170,6 @@ export async function POST(req: NextRequest) {
 
     await saveChunks(id, user.id, chunks);
 
-    // Clean up temp storage — fire-and-forget, non-critical
-    admin.storage.from(BUCKET).remove([storageKey]).catch(() => {});
-
     return NextResponse.json({
       id,
       title,
@@ -184,5 +183,9 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[upload] error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    if (resolvedKey) {
+      admin.storage.from(BUCKET).remove([resolvedKey]).catch(() => {});
+    }
   }
 }

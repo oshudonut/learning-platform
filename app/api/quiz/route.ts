@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured } from "@/lib/claude";
 import { SYSTEM_PREAMBLE, buildQuizTask } from "@/lib/prompts";
+import { extractSummarySlice } from "@/lib/pdf";
 import { getDocument, updateDocument, getProgression } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { ExtendedQuizSchema } from "@/lib/types";
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
       schema: ExtendedQuizSchema,
       systemPreamble: SYSTEM_PREAMBLE,
-      documentText: doc.text,
+      documentText: extractSummarySlice(doc.text, 40_000),
       taskInstruction,
       maxTokens: 10000,
     });

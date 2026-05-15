@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured } from "@/lib/claude";
 import { buildFlashcardTask, SYSTEM_PREAMBLE } from "@/lib/prompts";
+import { extractSummarySlice } from "@/lib/pdf";
 import { getDocument, updateDocument, getProgression } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { FlashcardsSchema } from "@/lib/types";
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
       schema: FlashcardsSchema,
       systemPreamble: SYSTEM_PREAMBLE,
-      documentText: doc.text,
+      documentText: extractSummarySlice(doc.text, 40_000),
       taskInstruction: buildFlashcardTask(progression?.learningMethod ?? undefined),
       maxTokens: 10000,
     });

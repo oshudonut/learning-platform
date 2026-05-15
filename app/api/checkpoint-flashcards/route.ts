@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
     if (!documentId) return NextResponse.json({ error: "documentId required" }, { status: 400 });
 
     if (action === "get") {
+      const doc = await getDocument(documentId, user.id);
+      if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
       const cards = await getCheckpointFlashcards(documentId, checkpointIndex);
       return NextResponse.json({ cards });
     }
@@ -64,6 +66,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error("[checkpoint-flashcards] error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

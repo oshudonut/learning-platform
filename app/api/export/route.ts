@@ -173,34 +173,48 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const supabase = createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const id = req.nextUrl.searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    const id = req.nextUrl.searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const doc = await getDocument(id, user.id);
-  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const doc = await getDocument(id, user.id);
+    if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const progression = await getProgression(id, user.id);
-  if (!progression?.quizUnlocked) {
-    return NextResponse.json({ error: "Complete all sections and pass the quiz to unlock export." }, { status: 403 });
+    const progression = await getProgression(id, user.id);
+    if (!progression?.quizUnlocked) {
+      return NextResponse.json({ error: "Complete all sections and pass the quiz to unlock export." }, { status: 403 });
+    }
+
+    if (!doc.reviewer) {
+      return NextResponse.json({ error: "No reviewer generated yet." }, { status: 404 });
+    }
+
+    const reviewer = doc.reviewer as Reviewer;
+    if (!reviewer.topics || !reviewer.summary || !reviewer.globalMustMemorize) {
+      return NextResponse.json(
+        { error: "DOCX export is only available for standard reviewers. Adaptive reviewers cannot be exported yet." },
+        { status: 422 },
+      );
+    }
+
+    const docx = buildDocx(doc, reviewer);
+    const buffer = await Packer.toBuffer(docx);
+
+    const filename = `${doc.title.replace(/[^a-z0-9]/gi, "_").slice(0, 60)}_reviewer.docx`;
+
+    return new NextResponse(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[export] error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  if (!doc.reviewer) {
-    return NextResponse.json({ error: "No reviewer generated yet." }, { status: 404 });
-  }
-
-  const docx = buildDocx(doc, doc.reviewer as Reviewer);
-  const buffer = await Packer.toBuffer(docx);
-
-  const filename = `${doc.title.replace(/[^a-z0-9]/gi, "_").slice(0, 60)}_reviewer.docx`;
-
-  return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-    },
-  });
 }
