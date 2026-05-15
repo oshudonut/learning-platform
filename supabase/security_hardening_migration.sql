@@ -1,12 +1,15 @@
 -- Stage 1 Security Hardening Migration
--- Run in Supabase SQL Editor (Dashboard → SQL Editor → New query)
+-- Status: APPLIED 2026-05-15
+-- Run via Supabase Management API — see session notes for execution log.
 
 -- ─── 1. Add user_id to conversations ─────────────────────────────────────────
+-- STATUS: APPLIED
 
 ALTER TABLE conversations
   ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL;
 
 -- ─── 2. RLS for conversations ─────────────────────────────────────────────────
+-- STATUS: APPLIED
 
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 
@@ -26,25 +29,25 @@ DROP POLICY IF EXISTS "conversations_delete_own" ON conversations;
 CREATE POLICY "conversations_delete_own" ON conversations
   FOR DELETE USING (auth.uid() = user_id);
 
--- ─── 3. Missing indexes ───────────────────────────────────────────────────────
+-- ─── 3. Indexes ───────────────────────────────────────────────────────────────
+-- STATUS: APPLIED (all four below)
 
--- Speeds up all user-scoped document queries (listDocuments, getDocument, etc.)
 CREATE INDEX IF NOT EXISTS documents_user_id_idx ON documents(user_id);
+CREATE INDEX IF NOT EXISTS conversations_user_id_idx ON conversations(user_id);
+CREATE INDEX IF NOT EXISTS conversations_document_id_idx ON conversations(document_id);
 
--- Per-user content dedup index (content_hash uniqueness scoped to user)
+-- Applied after manual deduplication (8 duplicate CT ENDTERM REVIEWER docs deleted,
+-- kept newest: a12k3zqkmp5sxu0a).
 CREATE UNIQUE INDEX IF NOT EXISTS documents_user_content_hash_uidx
   ON documents(user_id, content_hash)
   WHERE content_hash IS NOT NULL;
 
--- Speeds up leaderboard ORDER BY xp DESC
-CREATE INDEX IF NOT EXISTS user_profiles_xp_idx ON user_profiles(xp DESC);
+-- SKIPPED: user_profiles has no xp column — leaderboard/XP feature not yet built.
+-- Add when XP is implemented:
+-- CREATE INDEX IF NOT EXISTS user_profiles_xp_idx ON user_profiles(xp DESC);
 
--- Speeds up conversation lookups by user and document
-CREATE INDEX IF NOT EXISTS conversations_user_id_idx ON conversations(user_id);
-CREATE INDEX IF NOT EXISTS conversations_document_id_idx ON conversations(document_id);
-
--- ─── 4. Tighten documents RLS (remove OR user_id IS NULL) ────────────────────
--- Only runs if no legacy NULL-user documents remain.
+-- ─── 4. Tighten documents RLS ─────────────────────────────────────────────────
+-- STATUS: APPLIED (no NULL user_id rows found)
 
 DO $$
 BEGIN
@@ -71,7 +74,8 @@ BEGIN
   END IF;
 END $$;
 
--- ─── 5. Same tightening for quiz_attempts and flashcard_sessions ──────────────
+-- ─── 5. Tighten quiz_attempts and flashcard_sessions RLS ─────────────────────
+-- STATUS: APPLIED (no NULL user_id rows found in either table)
 
 DO $$
 BEGIN
