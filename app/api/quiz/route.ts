@@ -45,7 +45,11 @@ export async function POST(req: NextRequest) {
 
     const difficultyLevel = body.difficultyLevel ?? "beginner";
     const weakTopics = body.weakTopics ?? [];
-    const taskInstruction = buildQuizTask({ difficultyLevel, weakTopics });
+    const taskInstruction = buildQuizTask({
+      difficultyLevel,
+      weakTopics,
+      learningMethod: progression?.learningMethod ?? undefined,
+    });
 
     const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
       schema: ExtendedQuizSchema,

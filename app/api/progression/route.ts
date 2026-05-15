@@ -27,6 +27,8 @@ function rebuildSectionStatuses(
   fresh.currentSectionIndex = progression.currentSectionIndex ?? 0;
   fresh.flashcardChallengeCompleted = progression.flashcardChallengeCompleted ?? false;
   fresh.createdAt = progression.createdAt;
+  fresh.learningMethod = progression.learningMethod;
+  fresh.studyMode = progression.studyMode;
   return fresh;
 }
 

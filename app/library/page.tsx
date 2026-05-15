@@ -6,15 +6,25 @@ import {
   Plus,
   Search,
   FileText,
+  BookOpen,
   Loader2,
   RefreshCw,
   ChevronRight,
   Inbox,
+  FolderPlus,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { FolderCard } from "@/components/library/FolderCard";
 import { DocumentCard } from "@/components/library/DocumentCard";
+import { cn } from "@/lib/utils";
+
+const COLOR_OPTIONS = ["blue","purple","green","amber","rose","sky","indigo","emerald"];
+const COLOR_DOTS: Record<string, string> = {
+  blue: "bg-blue-400", purple: "bg-purple-400", green: "bg-green-400",
+  amber: "bg-amber-400", rose: "bg-rose-400", sky: "bg-sky-400",
+  indigo: "bg-indigo-400", emerald: "bg-emerald-400",
+};
 
 type FolderMeta = { id: string; name: string; color: string };
 
@@ -43,6 +53,12 @@ export default function LibraryPage() {
   // Rename dialog
   const [renamingDoc, setRenamingDoc] = useState<{ id: string; title: string } | null>(null);
   const [renameInput, setRenameInput] = useState("");
+
+  // New folder dialog
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderColor, setNewFolderColor] = useState("blue");
+  const [newFolderCreating, setNewFolderCreating] = useState(false);
 
   async function fetchAll() {
     setLoading(true);
@@ -93,6 +109,35 @@ export default function LibraryPage() {
     } catch {
       setFolders(prev);
     }
+  }
+
+  async function handleCreateFolder() {
+    const name = newFolderName.trim();
+    if (!name || newFolderCreating) return;
+    setNewFolderCreating(true);
+    try {
+      const res = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "create", name, color: newFolderColor }),
+      });
+      const data = await res.json() as { folder?: FolderMeta };
+      if (data.folder) setFolders((f) => [...f, data.folder!]);
+    } finally {
+      setNewFolderCreating(false);
+      setNewFolderOpen(false);
+      setNewFolderName("");
+      setNewFolderColor("blue");
+    }
+  }
+
+  async function handleFolderColorChange(id: string, color: string) {
+    setFolders((f) => f.map((x) => (x.id === id ? { ...x, color } : x)));
+    await fetch("/api/folders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "update", id, color }),
+    });
   }
 
   // ─── Document CRUD ───────────────────────────────────────────────────────────
@@ -155,6 +200,47 @@ export default function LibraryPage() {
 
   return (
     <AppShell>
+      {/* New folder dialog */}
+      {newFolderOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-card border border-border p-5 shadow-2xl">
+            <h2 className="text-sm font-semibold text-foreground mb-3">New folder</h2>
+            <input
+              autoFocus
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCreateFolder(); if (e.key === "Escape") { setNewFolderOpen(false); setNewFolderName(""); } }}
+              placeholder="Folder name…"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-xs text-muted-foreground">Color</span>
+              <div className="flex gap-1.5">
+                {COLOR_OPTIONS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setNewFolderColor(c)}
+                    className={cn(
+                      "h-5 w-5 rounded-full transition-all",
+                      COLOR_DOTS[c],
+                      newFolderColor === c ? "ring-2 ring-offset-1 ring-offset-card ring-foreground/40 scale-110" : "opacity-60 hover:opacity-100",
+                    )}
+                    title={c}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4 justify-end">
+              <Button variant="ghost" size="sm" onClick={() => { setNewFolderOpen(false); setNewFolderName(""); }}>Cancel</Button>
+              <Button size="sm" onClick={() => void handleCreateFolder()} disabled={!newFolderName.trim() || newFolderCreating}>
+                {newFolderCreating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Create"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rename dialog */}
       {renamingDoc && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -204,6 +290,10 @@ export default function LibraryPage() {
             <Button variant="ghost" size="icon" onClick={() => void fetchAll()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
+            <Button variant="outline" onClick={() => setNewFolderOpen(true)} className="min-h-[44px]">
+              <FolderPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">New Folder</span>
+            </Button>
             <Link href="/">
               <Button variant="accent" className="min-h-[44px]">
                 <Plus className="h-4 w-4" />
@@ -225,6 +315,26 @@ export default function LibraryPage() {
           />
         </div>
 
+        {!loading && folders.length === 0 && docs.length === 0 && (
+          <div className="flex flex-col items-center text-center py-24 gap-5">
+            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <BookOpen className="h-8 w-8 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">Your library is empty</h3>
+              <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                Upload your first study material to get started. PDFs, DOCX, and images are all supported.
+              </p>
+            </div>
+            <Link href="/">
+              <Button variant="accent">
+                <Plus className="h-4 w-4" />
+                Upload your first document
+              </Button>
+            </Link>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="h-8 w-8 text-primary animate-spin" />
@@ -244,6 +354,7 @@ export default function LibraryPage() {
                       onSelect={() => setActiveFolder(folder.id)}
                       onRename={handleFolderRename}
                       onDelete={handleFolderDelete}
+                      onColorChange={handleFolderColorChange}
                     />
                   ))}
                 </div>

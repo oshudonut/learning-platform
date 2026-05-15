@@ -14,13 +14,15 @@ import {
   Loader2,
   Star,
   AlertTriangle,
+  Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import type { ExtendedQuizQuestion, QuizDifficultyLevel } from "@/lib/types";
+import type { ExtendedQuizQuestion, LearningMethod, QuizDifficultyLevel } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { PASSING_SCORE } from "@/lib/progression";
+import { MethodBadge, getMethodHint } from "@/lib/learning-methods";
 
 type AnswerState = {
   correct: boolean;
@@ -436,12 +438,14 @@ export function QuizEngine({
   documentId,
   documentTitle,
   difficultyLevel = "beginner",
+  learningMethod = null,
   onQuizComplete,
 }: {
   quiz: { questions: ExtendedQuizQuestion[] };
   documentId: string;
   documentTitle: string;
   difficultyLevel?: QuizDifficultyLevel;
+  learningMethod?: LearningMethod | null;
   onQuizComplete?: (passed: boolean, weakTopics: string[]) => void;
 }) {
   const [current, setCurrent] = useState(0);
@@ -517,19 +521,28 @@ export function QuizEngine({
   }
 
   const elapsed = Math.round((Date.now() - startTime) / 1000);
+  const methodHint = getMethodHint(learningMethod, "quiz");
 
   return (
     <div className="space-y-6">
       {!done && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span>{answers.length} answered · {quiz.questions.length - current - 1} remaining</span>
             <Badge variant="outline" className="capitalize text-xs">{difficultyLevel.replace(/_/g, " ")}</Badge>
+            <MethodBadge method={learningMethod} />
           </div>
           <div className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" />
             <span>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
           </div>
+        </div>
+      )}
+
+      {!done && methodHint && (
+        <div className="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+          <Lightbulb className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground italic leading-relaxed">{methodHint}</p>
         </div>
       )}
 

@@ -26,6 +26,7 @@ import type {
   MatchAnswer,
   QuizQuestion,
   Folder,
+  AnyReviewer,
 } from "./types";
 export { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
 import { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
@@ -560,7 +561,7 @@ export async function saveCheckpointFlashcards(documentId: string, checkpointInd
 
 // ─── Remediation ──────────────────────────────────────────────────────────────
 
-export async function getLatestRemediationReviewer(documentId: string): Promise<{ weakTopics: string[]; content: import("./types").Reviewer } | null> {
+export async function getLatestRemediationReviewer(documentId: string): Promise<{ weakTopics: string[]; content: AnyReviewer } | null> {
   const { data, error } = await supabase
     .from("remediation_reviewers")
     .select("weak_topics, content")
@@ -572,10 +573,10 @@ export async function getLatestRemediationReviewer(documentId: string): Promise<
     if (error.code === "PGRST116") return null;
     throw error;
   }
-  return { weakTopics: data.weak_topics as string[], content: data.content as import("./types").Reviewer };
+  return { weakTopics: data.weak_topics as string[], content: data.content as AnyReviewer };
 }
 
-export async function saveRemediationReviewer(documentId: string, weakTopics: string[], content: import("./types").Reviewer): Promise<void> {
+export async function saveRemediationReviewer(documentId: string, weakTopics: string[], content: AnyReviewer): Promise<void> {
   const { error } = await supabase.from("remediation_reviewers").insert({
     document_id: documentId,
     weak_topics: weakTopics,

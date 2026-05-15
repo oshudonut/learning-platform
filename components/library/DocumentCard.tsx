@@ -19,6 +19,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/utils";
 
+const FOLDER_COLOR_DOTS: Record<string, string> = {
+  blue: "bg-blue-400", purple: "bg-purple-400", green: "bg-green-400",
+  amber: "bg-amber-400", rose: "bg-rose-400", sky: "bg-sky-400",
+  indigo: "bg-indigo-400", emerald: "bg-emerald-400",
+};
+
 type FolderOption = { id: string; name: string; color: string };
 
 type DocMeta = {
@@ -193,7 +199,7 @@ export function DocumentCard({ doc, index, folders, onDelete, onRename, onMove }
                     )}
                     onClick={() => { setMenuOpen(false); setMovingOpen(false); onMove(doc.id, f.id); }}
                   >
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-400 flex-shrink-0" />
+                    <span className={cn("h-2.5 w-2.5 rounded-full flex-shrink-0", FOLDER_COLOR_DOTS[f.color] ?? "bg-blue-400")} />
                     <span className="flex-1 truncate">{f.name}</span>
                     {doc.folderId === f.id && <Check className="h-3.5 w-3.5 text-primary" />}
                   </button>

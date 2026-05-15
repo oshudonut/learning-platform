@@ -15,8 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import type { Flashcard, FlashcardReviewState } from "@/lib/types";
+import type { Flashcard, FlashcardReviewState, LearningMethod } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { MethodBadge, getMethodHint } from "@/lib/learning-methods";
 
 // SM-2 algorithm
 function sm2(state: FlashcardReviewState, quality: number): FlashcardReviewState {
@@ -132,12 +133,14 @@ export function FlashcardStudy({
   documentId,
   documentTitle,
   initialStates,
+  learningMethod = null,
   onSessionComplete,
 }: {
   cards: Flashcard[];
   documentId: string;
   documentTitle: string;
   initialStates?: FlashcardReviewState[];
+  learningMethod?: LearningMethod | null;
   onSessionComplete?: () => void;
 }) {
   const [states, setStates] = useState<FlashcardReviewState[]>(
@@ -149,6 +152,7 @@ export function FlashcardStudy({
   const [done, setDone] = useState(false);
 
   const card = cards[current];
+  const methodHint = getMethodHint(learningMethod, "flashcard");
 
   const handleFlip = useCallback(() => setFlipped((f) => !f), []);
 
@@ -259,13 +263,23 @@ export function FlashcardStudy({
   return (
     <div className="space-y-6">
       {/* Progress */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Card {current + 1} of {cards.length}
-        </span>
+      <div className="flex items-center justify-between text-sm text-muted-foreground gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span>
+            Card {current + 1} of {cards.length}
+          </span>
+          <MethodBadge method={learningMethod} />
+        </div>
         <span>{sessionResults.filter((q) => q >= 3).length} known</span>
       </div>
       <Progress value={current} max={cards.length} />
+
+      {methodHint && (
+        <div className="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+          <Lightbulb className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground italic leading-relaxed">{methodHint}</p>
+        </div>
+      )}
 
       {/* Card */}
       <AnimatePresence mode="wait">

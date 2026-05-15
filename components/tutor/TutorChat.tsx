@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { LearningMethod } from "@/lib/types";
+import { MethodBadge, METHOD_CONFIG, getMethodHint } from "@/lib/learning-methods";
 
 type Message = {
   role: "user" | "assistant";
@@ -26,6 +28,89 @@ const SUGGESTED_QUESTIONS = [
   "What questions might appear on an exam?",
   "What do students often misunderstand about this?",
 ];
+
+// Per-method suggested-question overrides. Methods omitted fall through to
+// SUGGESTED_QUESTIONS. Themes derive from each method's pedagogical stance.
+const METHOD_SUGGESTED_QUESTIONS: Partial<Record<LearningMethod, string[]>> = {
+  feynman: [
+    "Explain this like I'm 12",
+    "Where does my analogy break?",
+    "Give me a simpler way to think about it",
+    "What's the one-sentence version?",
+  ],
+  active_recall: [
+    "Quiz me on this section",
+    "Don't answer — make me try first",
+    "Ask me a recall question on this topic",
+    "Test my weak spots",
+  ],
+  spaced_repetition: [
+    "What should I review tomorrow?",
+    "Which facts are highest priority right now?",
+    "What's due for review this week?",
+    "Help me sort what to revisit",
+  ],
+  blurting: [
+    "Let me write everything I know — then check me",
+    "Quiz me cold, then point out gaps",
+    "What did I miss in my brain-dump?",
+    "Score my recall attempt",
+  ],
+  mind_maps: [
+    "How does this connect to other topics?",
+    "Map the relationships here",
+    "What concepts branch from this one?",
+    "Show me the bigger picture",
+  ],
+  mnemonic: [
+    "Give me a memory hook for this",
+    "What acronym helps here?",
+    "Suggest a vivid image to anchor this fact",
+    "Build me a rhyme for this list",
+  ],
+  interleaving: [
+    "Contrast this with an earlier topic",
+    "What's easy to mix up here?",
+    "Compare this to its closest neighbor",
+    "Mix me a cross-topic challenge",
+  ],
+  elaboration: [
+    "Why does this happen, mechanistically?",
+    "Trace the cause and effect",
+    "What's the underlying reason?",
+    "Explain the 'why' behind this",
+  ],
+  sq3r: [
+    "What questions should I form for this section?",
+    "Help me Survey this topic",
+    "Quiz me on the Recite step",
+    "What should I Review at the end?",
+  ],
+  pq4r: [
+    "Preview this section for me",
+    "Give me a Reflect prompt",
+    "Quiz me at the Recite stage",
+    "What's worth Reviewing later?",
+  ],
+  leitner: [
+    "Which facts go in Box 1 (daily)?",
+    "What's Box 3 material here?",
+    "Sort these by confidence with me",
+    "Move my weakest cards to Box 1",
+  ],
+  pomodoro: [
+    "Set me up for a 25-minute focus session",
+    "What should I cover this Pomodoro?",
+    "Quick end-of-session review please",
+    "Where's a good break point?",
+  ],
+  multisensory: [
+    "Describe a diagram for this",
+    "Walk me through this visually",
+    "What's a sketch I could draw?",
+    "Talk me through it out loud",
+  ],
+};
 
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
@@ -111,10 +196,12 @@ export function TutorChat({
   documentId,
   documentTitle,
   initialConversationId,
+  learningMethod = null,
 }: {
   documentId?: string;
   documentTitle?: string;
   initialConversationId?: string;
+  learningMethod?: LearningMethod | null;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -231,6 +318,9 @@ export function TutorChat({
   }
 
   const empty = messages.length === 0 && !streaming;
+  const methodHint = getMethodHint(learningMethod, "tutor");
+  const suggestedQuestions =
+    (learningMethod && METHOD_SUGGESTED_QUESTIONS[learningMethod]) || SUGGESTED_QUESTIONS;
 
   return (
     <div className="flex flex-col h-full min-h-[500px]">
@@ -253,10 +343,27 @@ export function TutorChat({
                 I&apos;m your personal AI professor. Ask questions, request explanations, or challenge me to test your understanding.
               </p>
             </div>
-            {documentTitle && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/10 rounded-full px-3 py-1.5">
-                <BookOpen className="h-3 w-3 text-primary" />
-                <span>Using context from your document</span>
+            {(documentTitle || learningMethod) && (
+              <div className="flex flex-col items-center gap-2 max-w-md">
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  {documentTitle && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/10 rounded-full px-3 py-1.5">
+                      <BookOpen className="h-3 w-3 text-primary" />
+                      <span>Using context from your document</span>
+                    </div>
+                  )}
+                  {learningMethod && (
+                    <MethodBadge
+                      method={learningMethod}
+                      label={`Study approach: ${METHOD_CONFIG[learningMethod].badge}`}
+                    />
+                  )}
+                </div>
+                {methodHint && (
+                  <p className="text-xs text-muted-foreground italic leading-relaxed text-center">
+                    {methodHint}
+                  </p>
+                )}
               </div>
             )}
 
@@ -264,7 +371,7 @@ export function TutorChat({
             <div className="w-full max-w-md space-y-2">
               <p className="text-xs text-muted-foreground">Try asking:</p>
               <div className="flex flex-wrap gap-2 justify-center">
-                {SUGGESTED_QUESTIONS.slice(0, 4).map((q) => (
+                {suggestedQuestions.slice(0, 4).map((q) => (
                   <button
                     key={q}
                     onClick={() => void sendMessage(q)}
@@ -308,7 +415,7 @@ export function TutorChat({
       {/* Suggestion chips (after first message) */}
       {messages.length > 0 && messages.length <= 4 && (
         <div className="py-2 flex flex-wrap gap-2">
-          {SUGGESTED_QUESTIONS.slice(0, 3).map((q) => (
+          {suggestedQuestions.slice(0, 3).map((q) => (
             <button
               key={q}
               onClick={() => void sendMessage(q)}

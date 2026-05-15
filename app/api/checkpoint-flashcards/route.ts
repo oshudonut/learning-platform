@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 
       const topicTitles = coveredTopics.map(t => t.title);
       const topicContent = JSON.stringify(coveredTopics);
-      const taskInstruction = buildCheckpointFlashcardTask(topicTitles);
+      const taskInstruction = buildCheckpointFlashcardTask(topicTitles, progression?.learningMethod ?? undefined);
 
       const { parsed } = await generateStructured({
         schema: FlashcardsSchema,

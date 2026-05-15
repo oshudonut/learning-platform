@@ -21,11 +21,7 @@ export async function GET(request: NextRequest) {
         await supabase.from("user_profiles").upsert(
           {
             id: user.id,
-            display_name:
-              user.user_metadata?.full_name ??
-              user.email?.split("@")[0] ??
-              "User",
-            avatar_url: user.user_metadata?.avatar_url ?? null,
+            display_name: user.email?.split("@")[0] ?? "User",
             username:
               (user.email?.split("@")[0] ?? "user") +
               "_" +
@@ -41,5 +37,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/auth/login?error=oauth_error`);
+  return NextResponse.redirect(`${origin}/auth/login?error=auth_error`);
 }

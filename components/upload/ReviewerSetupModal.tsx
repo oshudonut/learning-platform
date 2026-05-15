@@ -16,6 +16,13 @@ import {
   Inbox,
   Loader2,
   Check,
+  Mic,
+  Shuffle,
+  ListChecks,
+  Bookmark,
+  Boxes,
+  Timer,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -43,12 +50,30 @@ type MethodCard = {
 };
 
 const METHODS: MethodCard[] = [
-  { id: "feynman",           label: "Feynman",           description: "Explain it simply",      icon: Brain    },
-  { id: "active_recall",    label: "Active Recall",     description: "Test yourself",           icon: Zap      },
-  { id: "spaced_repetition",label: "Spaced Repetition", description: "Review at intervals",     icon: Clock    },
-  { id: "mind_maps",        label: "Mind Maps",         description: "Connect concepts",        icon: Network  },
-  { id: "mnemonic",         label: "Mnemonic",          description: "Memory tricks",           icon: Key      },
-  { id: "elaboration",      label: "Elaboration",       description: "Deep explanations",       icon: BookOpen },
+  { id: "feynman",           label: "Feynman",                  description: "Explain it simply",       icon: Brain      },
+  { id: "active_recall",     label: "Active Recall",            description: "Test yourself",           icon: Zap        },
+  { id: "spaced_repetition", label: "Spaced Repetition",        description: "Review at intervals",     icon: Clock      },
+  { id: "blurting",          label: "Blurting",                 description: "Brain-dump first",        icon: Mic        },
+  { id: "mind_maps",         label: "Mind Maps",                description: "Connect concepts",        icon: Network    },
+  { id: "mnemonic",          label: "Mnemonic",                 description: "Memory tricks",           icon: Key        },
+  { id: "interleaving",      label: "Interleaving",             description: "Mix topics together",     icon: Shuffle    },
+  { id: "elaboration",       label: "Elaboration",              description: "Deep explanations",       icon: BookOpen   },
+  { id: "sq3r",              label: "SQ3R",                     description: "Survey → Recite cycle",   icon: ListChecks },
+  { id: "pq4r",              label: "PQ4R",                     description: "Preview → Review cycle",  icon: Bookmark   },
+  { id: "leitner",           label: "Leitner",                  description: "Box-based recall",        icon: Boxes      },
+  { id: "pomodoro",          label: "Focus Timer (Pomodoro)",   description: "25-min focused sprints",  icon: Timer      },
+  { id: "multisensory",      label: "Multisensory",             description: "See, say, write it",      icon: Eye        },
+];
+
+const COLOR_SWATCHES = [
+  { id: "blue",    dot: "bg-blue-400"    },
+  { id: "purple",  dot: "bg-purple-400"  },
+  { id: "green",   dot: "bg-green-400"   },
+  { id: "amber",   dot: "bg-amber-400"   },
+  { id: "rose",    dot: "bg-rose-400"    },
+  { id: "sky",     dot: "bg-sky-400"     },
+  { id: "indigo",  dot: "bg-indigo-400"  },
+  { id: "emerald", dot: "bg-emerald-400" },
 ];
 
 const folderColorMap: Record<string, { bg: string; text: string; dot: string }> = {
@@ -78,6 +103,7 @@ export function ReviewerSetupModal({
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<LearningMethod | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [newFolderColor, setNewFolderColor] = useState("blue");
 
   // Folder dropdown state
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -118,7 +144,7 @@ export function ReviewerSetupModal({
       const res = await fetch("/api/folders", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "create", name, color: "blue" }),
+        body: JSON.stringify({ action: "create", name, color: newFolderColor }),
       });
       const data = await res.json() as { folder?: FolderOption };
       if (data.folder) {
@@ -129,6 +155,7 @@ export function ReviewerSetupModal({
       setNewFolderCreating(false);
       setCreatingFolder(false);
       setNewFolderName("");
+      setNewFolderColor("blue");
       setDropdownOpen(false);
     }
   }
@@ -252,28 +279,46 @@ export function ReviewerSetupModal({
 
                     {/* Create new folder */}
                     {creatingFolder ? (
-                      <div className="px-3 py-2.5 flex items-center gap-2">
-                        <FolderPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        <input
-                          ref={newFolderInputRef}
-                          type="text"
-                          value={newFolderName}
-                          onChange={(e) => setNewFolderName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") void handleCreateFolder();
-                            if (e.key === "Escape") { setCreatingFolder(false); setNewFolderName(""); }
-                          }}
-                          placeholder="Folder name…"
-                          className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => void handleCreateFolder()}
-                          disabled={!newFolderName.trim() || newFolderCreating}
-                          className="text-xs text-white bg-white/10 hover:bg-white/20 rounded px-2 py-1 transition-colors disabled:opacity-50"
-                        >
-                          {newFolderCreating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
-                        </button>
+                      <div>
+                        <div className="px-3 py-2.5 flex items-center gap-2">
+                          <FolderPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <input
+                            ref={newFolderInputRef}
+                            type="text"
+                            value={newFolderName}
+                            onChange={(e) => setNewFolderName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void handleCreateFolder();
+                              if (e.key === "Escape") { setCreatingFolder(false); setNewFolderName(""); }
+                            }}
+                            placeholder="Folder name…"
+                            className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleCreateFolder()}
+                            disabled={!newFolderName.trim() || newFolderCreating}
+                            className="text-xs text-white bg-white/10 hover:bg-white/20 rounded px-2 py-1 transition-colors disabled:opacity-50"
+                          >
+                            {newFolderCreating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-3 pb-2">
+                          {COLOR_SWATCHES.map(({ id, dot }) => (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setNewFolderColor(id); }}
+                              className={cn(
+                                "h-4 w-4 rounded-full flex-shrink-0 transition-all",
+                                dot,
+                                newFolderColor === id
+                                  ? "ring-2 ring-offset-1 ring-offset-gray-800 ring-white/40 scale-110"
+                                  : "opacity-50 hover:opacity-90",
+                              )}
+                            />
+                          ))}
+                        </div>
                       </div>
                     ) : (
                       <button

@@ -7,7 +7,7 @@ import {
   TUTOR_SYSTEM,
   TUTOR_WITH_CONTEXT,
 } from "@/lib/prompts";
-import { getDocument, saveConversation, getConversation } from "@/lib/store";
+import { getDocument, saveConversation, getConversation, getProgression } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { randomId } from "@/lib/utils";
 import type { TutorMessage } from "@/lib/types";
@@ -57,7 +57,8 @@ export async function POST(req: NextRequest) {
       if (doc) {
         docTitle = doc.title;
         const context = retrieveContext(doc.text, message);
-        systemPrompt = TUTOR_WITH_CONTEXT(context, doc.title);
+        const progression = await getProgression(documentId, user.id);
+        systemPrompt = TUTOR_WITH_CONTEXT(context, doc.title, progression?.learningMethod ?? undefined);
       }
     }
 

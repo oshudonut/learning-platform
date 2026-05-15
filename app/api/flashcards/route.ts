@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured } from "@/lib/claude";
-import { FLASHCARD_TASK, SYSTEM_PREAMBLE } from "@/lib/prompts";
-import { getDocument, updateDocument } from "@/lib/store";
+import { buildFlashcardTask, SYSTEM_PREAMBLE } from "@/lib/prompts";
+import { getDocument, updateDocument, getProgression } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { FlashcardsSchema } from "@/lib/types";
 
@@ -28,11 +28,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ flashcards: doc.flashcards, cached: true });
     }
 
+    const progression = await getProgression(id, user.id);
+
     const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
       schema: FlashcardsSchema,
       systemPreamble: SYSTEM_PREAMBLE,
       documentText: doc.text,
-      taskInstruction: FLASHCARD_TASK,
+      taskInstruction: buildFlashcardTask(progression?.learningMethod ?? undefined),
       maxTokens: 10000,
     });
 

@@ -1,3 +1,6 @@
+import type { LearningMethod, StudyMode, QuizDifficultyLevel, ReviewerSchemaType } from "./types";
+import { METHOD_SCHEMA_MAP } from "./types";
+
 // ─── Shared educator preamble (cached across calls) ───────────────────────────
 
 export const SYSTEM_PREAMBLE = `You are a precise medical and academic exam preparation engine. You extract high-yield, board-exam-critical information and output it in compact structured JSON.
@@ -80,7 +83,7 @@ Use exactly these field names.`;
 
 // ─── Flashcard task ───────────────────────────────────────────────────────────
 
-export const FLASHCARD_TASK = `Generate a comprehensive flashcard deck from the source material.
+const FLASHCARD_TASK_BASE = `Generate a comprehensive flashcard deck from the source material.
 
 Return a JSON object with EXACTLY this structure:
 
@@ -103,6 +106,28 @@ Requirements:
 - Focus on high-yield exam material
 
 Use exactly these field names.`;
+
+const METHOD_FLASHCARD_INSTRUCTIONS: Record<LearningMethod, string> = {
+  feynman: "FEYNMAN METHOD: Fronts ask the student to explain concepts in plain language, as if teaching a 12-year-old. Use prompts like 'Explain ___ in your own words' or 'What is ___ like in everyday terms?' Backs use simple language and include an analogy.",
+  active_recall: "ACTIVE RECALL METHOD: Every front is a direct retrieval question with no context clues or sentence stems. Force the student to recall before seeing the answer. Backs are concise and direct.",
+  spaced_repetition: "SPACED REPETITION METHOD: Tag each card's topic field with priority: [HIGH], [MEDIUM], or [LOW] based on difficulty. In the hint field include: 'Review again in: tomorrow / 3 days / 1 week' matched to the priority.",
+  blurting: "BLURTING METHOD: Fronts are blank-fill sentence stems (e.g., 'The ___ causes ___') or open challenges ('Write everything you know about ___ before flipping'). Backs complete the statement with full information.",
+  mind_maps: "MIND MAPPING METHOD: Fronts are relationship questions: 'How does X connect to Y?' or 'What does A lead to?' Backs use → arrow notation to show connections and hierarchies.",
+  mnemonic: "MNEMONIC METHOD: Every card must include a specific memory anchor in the hint field — the actual mnemonic device (acronym spelled out, actual rhyme, or vivid 1-sentence story). Never write 'use a mnemonic' — generate the actual device.",
+  interleaving: "INTERLEAVING METHOD: Deliberately interleave cards across topics — no two consecutive cards should come from the same topic section. The deck order must mix topics throughout.",
+  elaboration: "ELABORATION METHOD: Fronts ask for mechanisms: 'Why does X cause Y?' or 'What is the mechanism behind ___?' Backs explain cause → effect chains, not just bare definitions.",
+  sq3r: "SQ3R METHOD: Fronts are questions derived from section headings, as if the student is in the Question phase of SQ3R. Backs are the answers the student would find in the Read phase.",
+  pq4r: "PQ4R METHOD: Fronts are questions generated from headings (Preview → Question phase). Backs answer each question as if Reciting after reading the section.",
+  leitner: "LEITNER SYSTEM: Tag each card's hint field with its Leitner box assignment: [Box 1] for new/hard facts (daily review), [Box 2] for developing recall (every 3 days), [Box 3] for mastered facts (weekly review).",
+  pomodoro: "",
+  multisensory: "MULTISENSORY METHOD: Fronts prompt multiple representations — vary across: verbal ('Describe ___ in words'), visual ('What would a diagram of ___ look like?'), or kinesthetic ('How would you draw or act out ___?'). Do not use the same modality for consecutive cards.",
+};
+
+export function buildFlashcardTask(method?: LearningMethod): string {
+  const instruction = method ? METHOD_FLASHCARD_INSTRUCTIONS[method] : "";
+  if (!instruction) return FLASHCARD_TASK_BASE;
+  return `${instruction}\n\n${FLASHCARD_TASK_BASE}`;
+}
 
 // ─── AI Tutor system prompt ───────────────────────────────────────────────────
 
@@ -129,8 +154,32 @@ Format guidelines:
 - End with either a check-for-understanding question or a clear next step
 - Use ✦ to highlight the single most important insight in each response`;
 
-export const TUTOR_WITH_CONTEXT = (context: string, title: string) =>
-  `${TUTOR_SYSTEM}
+// ─── Method-aware tutor system prompt ────────────────────────────────────────
+
+const METHOD_TUTOR_ADDENDUM: Record<LearningMethod, string> = {
+  feynman: "FEYNMAN TECHNIQUE MODE: Your primary tool is the Feynman Technique. When a student asks anything, first ask them to explain what they already know in simple terms — then correct, simplify, and deepen. Every answer must include an analogy. Entry phrase: 'Let's try the Feynman test — explain this to me like I'm 12.'",
+  active_recall: "IMPORTANT: The following behavior OVERRIDES the default Socratic approach. Do NOT guide students toward answers. Do NOT ask gentle leading questions. FIRST demand recall: require the student to attempt full retrieval before you say anything substantive. Only after they attempt should you respond.\n\nACTIVE RECALL MODE: Before answering any question, ask the student to recall first: 'Before I explain — what do you already remember about this?' Only after they attempt should you reveal the full answer. Push retrieval, not reception.",
+  spaced_repetition: "SPACED REPETITION MODE: For each concept, identify its review priority (HIGH / MEDIUM / LOW) and suggest when to revisit it. End every explanation with: 'Spacing recommendation: review this again in [timeframe].'",
+  blurting: "IMPORTANT: The following behavior OVERRIDES the default Socratic approach. Do NOT guide students toward answers. Do NOT ask gentle leading questions. FIRST demand recall: require the student to attempt full retrieval before you say anything substantive. Only after they attempt should you respond.\n\nBLURTING MODE: Challenge students to blurt before receiving information. 'Close your eyes, say everything you know about this out loud, then read my answer.' Frame facts as fill-in-the-blank prompts when possible.",
+  mind_maps: "MIND MAPPING MODE: Show connections explicitly. Use → arrow notation to map relationships. After explaining a concept, ask: 'How does this connect to [related concept]?' Draw the knowledge graph out loud.",
+  mnemonic: "MNEMONIC MODE: Create a specific memory anchor for every key fact. End every explanation with a 'Memory Hook: [actual acronym / rhyme / vivid image]'. Never say 'use a mnemonic' — generate the actual device.",
+  interleaving: "INTERLEAVING MODE: Never answer in isolation. Always bridge to adjacent topics: 'This connects to [other topic] because...' Ask contrast questions: 'How is this different from [similar concept]?'",
+  elaboration: "ELABORATION MODE: Always explain the mechanism, never just the fact. 'The reason X causes Y is because...' Ask 'Why?' after every answer. Build cause → effect chains. The student should understand the mechanism, not just the outcome.",
+  sq3r: "SQ3R MODE: Structure your responses in SQ3R phases — Survey (big picture), Question (surface what the student doesn't yet know), Read (explain the content), Recite (ask them to restate), Review (summarize key points).",
+  pq4r: "PQ4R MODE: Structure responses in PQ4R phases — Preview (overview first), Question (what should the student be able to answer?), Read (explain), Reflect (connect to prior knowledge), Recite (ask them to restate), Review (wrap up with key points).",
+  leitner: "LEITNER SYSTEM MODE: After explaining a concept, classify its difficulty together with the student. Suggest: 'This feels like a Box 1 fact — let's make sure you review it tomorrow. What's the key thing you need to remember?' Guide them to sort new knowledge by confidence level.",
+  pomodoro: "POMODORO MODE: Suggest study breaks at natural concept boundaries. When a student has fully covered a concept, say: 'Good checkpoint — take a 5-minute break, then we'll continue with [next topic].'",
+  multisensory: "MULTISENSORY MODE: Use multiple modalities. Describe concepts verbally AND visually ('imagine a diagram where...'). Suggest hands-on activities ('try drawing this out or writing it down'). Ask the student to represent their understanding in at least two different ways.",
+};
+
+export function buildTutorSystemPrompt(method?: LearningMethod): string {
+  if (!method) return TUTOR_SYSTEM;
+  const addendum = METHOD_TUTOR_ADDENDUM[method];
+  return `${TUTOR_SYSTEM}\n\n${addendum}`;
+}
+
+export const TUTOR_WITH_CONTEXT = (context: string, title: string, method?: LearningMethod) =>
+  `${buildTutorSystemPrompt(method)}
 
 You have deep knowledge of the student's study material: "${title}".
 
@@ -142,9 +191,6 @@ ${context}
 Draw from this material when relevant, but feel free to go beyond it to provide deeper context, analogies, or related knowledge. Always prioritize understanding over coverage.`;
 
 // ─── Adaptive Reviewer task ───────────────────────────────────────────────────
-
-import type { LearningMethod, StudyMode, QuizDifficultyLevel, ReviewerSchemaType } from "./types";
-import { METHOD_SCHEMA_MAP } from "./types";
 
 const METHOD_INSTRUCTIONS: Record<LearningMethod, string> = {
   feynman: "Use plain-language explanations as if teaching a beginner. Lead every topic with a simple analogy. Replace jargon with everyday equivalents. Make the explanation so clear a non-expert could understand it.",
@@ -463,8 +509,8 @@ export function getMethodologyConfig(method: LearningMethod, mode: StudyMode): {
 
 // ─── Checkpoint Flashcard task ────────────────────────────────────────────────
 
-export function buildCheckpointFlashcardTask(topicTitles: string[]): string {
-  return `Generate 5–8 targeted flashcards for a checkpoint review.
+export function buildCheckpointFlashcardTask(topicTitles: string[], method?: LearningMethod): string {
+  const topicConstraint = `Generate 5–8 targeted flashcards for a checkpoint review.
 The student just completed these reviewer sections: ${topicTitles.map(t => `"${t}"`).join(", ")}.
 Focus ONLY on content from these sections.
 
@@ -474,9 +520,13 @@ Return EXACTLY this JSON structure:
 Requirements:
 - 5–8 cards total
 - Target must-memorize facts and quick recall prompts from these sections
-- difficulty mix: ~50% easy, ~50% medium
-- hint: include for medium/hard cards
+- difficulty mix: ~50% medium, ~50% hard (no easy cards — this is a gating assessment)
+- hint: include for all cards
 - topic: use the section title it came from`;
+
+  const methodInstruction = method ? METHOD_FLASHCARD_INSTRUCTIONS[method] : "";
+  if (!methodInstruction) return topicConstraint;
+  return `${topicConstraint}\n\n${methodInstruction}\n\nIMPORTANT: The topic coverage constraint above (sections and card count) takes absolute priority. Apply the method style to front/back content only — do not generate cards outside the listed sections.`;
 }
 
 // ─── Extended Quiz task ───────────────────────────────────────────────────────
@@ -489,17 +539,36 @@ const DIFFICULTY_INSTRUCTIONS: Record<QuizDifficultyLevel, string> = {
   extreme_recall: "Target dense fact recall, precise numerical thresholds, edge cases, and obscure distinctions.",
 };
 
-export function buildQuizTask(opts: { difficultyLevel: QuizDifficultyLevel; weakTopics: string[]; questionCount?: number }): string {
+const METHOD_QUIZ_INSTRUCTIONS: Record<LearningMethod, string> = {
+  feynman: "Mix: ~35% identification, ~30% multiple_choice, ~25% fill_in_the_blank, ~10% true_false. Questions should ask students to explain, interpret, or restate concepts: 'Explain why...', 'In your own words, what is...', 'Why does...'",
+  active_recall: "Mix: ~40% fill_in_the_blank, ~30% identification, ~20% multiple_choice, ~10% true_false. No context clues in question stems — force pure retrieval. Questions are short and direct.",
+  spaced_repetition: "Mix: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank. In each explanation field, add a review urgency note: 'HIGH priority — review this again tomorrow.'",
+  blurting: "Mix: ~40% fill_in_the_blank, ~35% identification, ~15% multiple_choice, ~10% true_false. Use sentence-completion and open-recall style. fill_in_the_blank templates should be direct fact-retrieval sentences.",
+  mind_maps: "Mix: ~35% multiple_choice, ~30% identification, ~20% fill_in_the_blank, ~15% true_false. At least 40% of questions must test relationships and connections: 'What does X lead to?', 'Which concept does Y depend on?', 'How does A connect to B?'",
+  mnemonic: "Mix: ~60% multiple_choice, ~20% true_false, ~10% identification, ~10% fill_in_the_blank. Recognition-heavy — distractors should represent plausible memory confusions. The correct answer should reward students who used the mnemonic.",
+  interleaving: "Mix: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank. At least 40% of questions must deliberately cross topics — require connecting or contrasting two or more sections.",
+  elaboration: "Mix: ~35% identification, ~30% multiple_choice, ~25% fill_in_the_blank, ~10% true_false. Ask for mechanisms and causation, not bare definitions: 'What causes...', 'Why does...', 'What is the mechanism by which...'",
+  sq3r: "Mix: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank. Frame questions as textbook study questions — the style a student would encounter in a chapter review.",
+  pq4r: "Mix: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank. Questions follow textbook chapter-review style, testing key concepts from each section.",
+  leitner: "Mix: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank. Weight difficulty toward hard — at least 40% of questions should be hard difficulty to challenge mastered material.",
+  pomodoro: "Mix: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank.",
+  multisensory: "Mix: ~30% identification (verbal recall), ~40% multiple_choice, ~20% fill_in_the_blank, ~10% true_false. At least 30% of questions must include a descriptive setup in the stem: 'Imagine a diagram showing...', 'Consider the following process...', or 'Looking at this sequence...' to cue visual processing.",
+};
+
+export function buildQuizTask(opts: { difficultyLevel: QuizDifficultyLevel; weakTopics: string[]; questionCount?: number; learningMethod?: LearningMethod }): string {
   const count = opts.questionCount ?? 10;
   const diffInstruction = DIFFICULTY_INSTRUCTIONS[opts.difficultyLevel];
   const weakInstruction = opts.weakTopics.length > 0
     ? `\nPrioritize these topics where the student previously struggled: ${opts.weakTopics.join(", ")}.`
     : "";
+  const mixInstruction = opts.learningMethod
+    ? METHOD_QUIZ_INSTRUCTIONS[opts.learningMethod]
+    : "Mix question types: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank.";
 
   return `Generate exactly ${count} quiz questions at "${opts.difficultyLevel}" difficulty level.
 ${diffInstruction}${weakInstruction}
 
-Mix question types: ~50% multiple_choice, ~20% true_false, ~20% identification, ~10% fill_in_the_blank.
+${mixInstruction}
 
 Return EXACTLY this JSON structure:
 {
@@ -552,15 +621,38 @@ Rules:
 
 // ─── Remediation reviewer task ────────────────────────────────────────────────
 
-export const REMEDIATION_REVIEWER_TASK = (weakTopics: string[]) =>
-  `The student failed their quiz. Their weak areas are: ${weakTopics.join(", ")}.
+export function buildRemediationPreamble(weakTopics: string[], schemaFamily?: ReviewerSchemaType): string {
+  const base = `The student failed their quiz. Their weak areas are: ${weakTopics.join(", ")}.
 
 Generate a focused remediation reviewer covering ONLY these weak topics.
-Use the EXACT SAME JSON structure as the full reviewer.
 
 Constraints:
 - topics: 1–4 entries, only the weak topics listed above
-- globalMustMemorize: focus only on facts related to the weak topics
-- mnemonics: focus on the specific weak items
+- Focus exclusively on the content the student struggled with
 - Be direct, concise, and exam-focused
 - Do NOT include topics the student already passed`;
+
+  if (schemaFamily === "memory") {
+    return `${base}
+- ALL anchors and priorities are HIGH — the student must rebuild these from scratch. Nothing is Box 3. Do not mark anything as MEDIUM or LOW priority.`;
+  }
+
+  return base;
+}
+
+// Retrieval-family students who fail their quiz need re-teaching first (conceptual schema),
+// not another retrieval challenge. They'll reapply their retrieval method once content is solid.
+const REMEDIATION_METHOD_OVERRIDE: Partial<Record<LearningMethod, LearningMethod>> = {
+  active_recall: "feynman",
+  blurting: "feynman",
+  sq3r: "feynman",
+  pq4r: "feynman",
+};
+
+export function getRemediationConfig(
+  method: LearningMethod,
+  studyMode: StudyMode,
+): ReturnType<typeof getMethodologyConfig> {
+  const effectiveMethod = REMEDIATION_METHOD_OVERRIDE[method] ?? method;
+  return getMethodologyConfig(effectiveMethod, studyMode);
+}

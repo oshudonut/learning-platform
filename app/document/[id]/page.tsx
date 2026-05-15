@@ -516,6 +516,7 @@ function DocumentPageInner() {
                         documentId={doc.id}
                         documentTitle={doc.title}
                         difficultyLevel={progression?.currentDifficultyLevel ?? "beginner"}
+                        learningMethod={progression?.learningMethod ?? null}
                         onQuizComplete={handleQuizComplete}
                       />
                     </div>
@@ -550,6 +551,7 @@ function DocumentPageInner() {
                         cards={flashcards.data}
                         documentId={doc.id}
                         documentTitle={doc.title}
+                        learningMethod={progression?.learningMethod ?? null}
                         onSessionComplete={handleFlashcardChallengeComplete}
                       />
                     </div>
@@ -559,7 +561,11 @@ function DocumentPageInner() {
 
               {/* TUTOR TAB */}
               {activeTab === "tutor" && (
-                <TutorChat documentId={doc.id} documentTitle={doc.title} />
+                <TutorChat
+                  documentId={doc.id}
+                  documentTitle={doc.title}
+                  learningMethod={progression?.learningMethod ?? null}
+                />
               )}
             </motion.div>
           </AnimatePresence>

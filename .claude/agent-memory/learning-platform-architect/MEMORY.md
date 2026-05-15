@@ -1,0 +1,2 @@
+- [Platform Overview](project-platform-overview.md) — Stack, conventions, and key architectural decisions for this Next.js 14 + Supabase + Claude learning platform
+- [Compete & Match UI](project-compete-match-ui.md) — Compete page and match lobby UI architecture, real-time hooks, and component locations

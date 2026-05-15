@@ -1,10 +1,21 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Folder, Trash2, Pencil, Check, X } from "lucide-react";
+import { Folder, Trash2, Pencil, Palette, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type FolderOption = { id: string; name: string; color: string };
+
+const COLOR_SWATCHES = [
+  { id: "blue",    dot: "bg-blue-400"    },
+  { id: "purple",  dot: "bg-purple-400"  },
+  { id: "green",   dot: "bg-green-400"   },
+  { id: "amber",   dot: "bg-amber-400"   },
+  { id: "rose",    dot: "bg-rose-400"    },
+  { id: "sky",     dot: "bg-sky-400"     },
+  { id: "indigo",  dot: "bg-indigo-400"  },
+  { id: "emerald", dot: "bg-emerald-400" },
+];
 
 const folderColorMap: Record<string, { bg: string; icon: string; border: string }> = {
   blue:    { bg: "bg-blue-500/10",    icon: "text-blue-400",    border: "border-blue-500/20"    },
@@ -23,18 +34,30 @@ type FolderCardProps = {
   onSelect: () => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  onColorChange: (id: string, color: string) => void;
 };
 
-export function FolderCard({ folder, docCount, onSelect, onRename, onDelete }: FolderCardProps) {
+export function FolderCard({ folder, docCount, onSelect, onRename, onDelete, onColorChange }: FolderCardProps) {
   const colors = folderColorMap[folder.color] ?? folderColorMap["blue"];
   const [renaming, setRenaming] = useState(false);
   const [nameInput, setNameInput] = useState(folder.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (renaming) inputRef.current?.select();
   }, [renaming]);
+
+  useEffect(() => {
+    if (!colorPickerOpen) return;
+    function handleOutside(e: MouseEvent) {
+      // close if click is outside the card
+      setColorPickerOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [colorPickerOpen]);
 
   function submitRename() {
     const trimmed = nameInput.trim();
@@ -106,6 +129,13 @@ export function FolderCard({ folder, docCount, onSelect, onRename, onDelete }: F
         >
           <button
             className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+            title="Change color"
+            onClick={(e) => { e.stopPropagation(); setColorPickerOpen((v) => !v); }}
+          >
+            <Palette className="h-3.5 w-3.5" />
+          </button>
+          <button
+            className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
             title="Rename"
             onClick={() => setRenaming(true)}
           >
@@ -118,6 +148,26 @@ export function FolderCard({ folder, docCount, onSelect, onRename, onDelete }: F
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
+          {colorPickerOpen && (
+            <div
+              className="absolute top-10 right-2 z-20 flex gap-1.5 rounded-lg border border-border bg-card p-2 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {COLOR_SWATCHES.map(({ id, dot }) => (
+                <button
+                  key={id}
+                  type="button"
+                  title={id}
+                  onClick={() => { onColorChange(folder.id, id); setColorPickerOpen(false); }}
+                  className={cn(
+                    "h-5 w-5 rounded-full transition-all",
+                    dot,
+                    folder.color === id ? "ring-2 ring-offset-1 ring-offset-card ring-foreground/40 scale-110" : "opacity-60 hover:opacity-100",
+                  )}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
