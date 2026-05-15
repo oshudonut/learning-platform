@@ -21,12 +21,12 @@ export async function POST(req: NextRequest) {
     if (action === "get") {
       const doc = await getDocument(documentId, user.id);
       if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-      const cards = await getCheckpointFlashcards(documentId, checkpointIndex);
+      const cards = await getCheckpointFlashcards(documentId, checkpointIndex, user.id);
       return NextResponse.json({ cards });
     }
 
     if (action === "generate") {
-      const existing = await getCheckpointFlashcards(documentId, checkpointIndex);
+      const existing = await getCheckpointFlashcards(documentId, checkpointIndex, user.id);
       if (existing && !body.force) return NextResponse.json({ cards: existing });
 
       const doc = await getDocument(documentId, user.id);
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       });
 
       const cards = parsed.cards;
-      await saveCheckpointFlashcards(documentId, checkpointIndex, cards);
+      await saveCheckpointFlashcards(documentId, checkpointIndex, cards, user.id);
 
       if (progression) {
         const cpStatus = progression.checkpointStatuses.find(c => c.checkpointIndex === checkpointIndex);

@@ -535,12 +535,13 @@ function rowToProgression(row: Record<string, unknown>): import("./types").Docum
 
 // ─── Checkpoint Flashcards ────────────────────────────────────────────────────
 
-export async function getCheckpointFlashcards(documentId: string, checkpointIndex: number): Promise<import("./types").Flashcard[] | null> {
+export async function getCheckpointFlashcards(documentId: string, checkpointIndex: number, userId: string): Promise<import("./types").Flashcard[] | null> {
   const { data, error } = await supabase
     .from("checkpoint_flashcards")
     .select("cards")
     .eq("document_id", documentId)
     .eq("checkpoint_index", checkpointIndex)
+    .eq("user_id", userId)
     .single();
   if (error) {
     if (error.code === "PGRST116") return null;
@@ -549,10 +550,11 @@ export async function getCheckpointFlashcards(documentId: string, checkpointInde
   return data.cards as import("./types").Flashcard[];
 }
 
-export async function saveCheckpointFlashcards(documentId: string, checkpointIndex: number, cards: import("./types").Flashcard[]): Promise<void> {
+export async function saveCheckpointFlashcards(documentId: string, checkpointIndex: number, cards: import("./types").Flashcard[], userId: string): Promise<void> {
   const { error } = await supabase.from("checkpoint_flashcards").upsert({
     document_id: documentId,
     checkpoint_index: checkpointIndex,
+    user_id: userId,
     cards,
     generated_at: Date.now(),
   });
@@ -561,11 +563,12 @@ export async function saveCheckpointFlashcards(documentId: string, checkpointInd
 
 // ─── Remediation ──────────────────────────────────────────────────────────────
 
-export async function getLatestRemediationReviewer(documentId: string): Promise<{ weakTopics: string[]; content: AnyReviewer } | null> {
+export async function getLatestRemediationReviewer(documentId: string, userId: string): Promise<{ weakTopics: string[]; content: AnyReviewer } | null> {
   const { data, error } = await supabase
     .from("remediation_reviewers")
     .select("weak_topics, content")
     .eq("document_id", documentId)
+    .eq("user_id", userId)
     .order("generated_at", { ascending: false })
     .limit(1)
     .single();
@@ -576,9 +579,10 @@ export async function getLatestRemediationReviewer(documentId: string): Promise<
   return { weakTopics: data.weak_topics as string[], content: data.content as AnyReviewer };
 }
 
-export async function saveRemediationReviewer(documentId: string, weakTopics: string[], content: AnyReviewer): Promise<void> {
+export async function saveRemediationReviewer(documentId: string, weakTopics: string[], content: AnyReviewer, userId: string): Promise<void> {
   const { error } = await supabase.from("remediation_reviewers").insert({
     document_id: documentId,
+    user_id: userId,
     weak_topics: weakTopics,
     content,
     generated_at: Date.now(),

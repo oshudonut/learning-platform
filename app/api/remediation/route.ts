@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     if (action === "get") {
       const doc = await getDocument(documentId, user.id);
       if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-      const result = await getLatestRemediationReviewer(documentId);
+      const result = await getLatestRemediationReviewer(documentId, user.id);
       return NextResponse.json({ remediation: result });
     }
 
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await saveRemediationReviewer(documentId, weakTopics, reviewer as any);
+      await saveRemediationReviewer(documentId, weakTopics, reviewer as any, user.id);
 
       // Reuse the already-fetched progression — no second DB call
       if (progression) {
