@@ -461,28 +461,22 @@ export function ReviewerView({
           transition={{ duration: 0.25, ease: "easeInOut" }}
           className="space-y-6"
         >
-          {/* Section header */}
-          <div className="rounded-xl border-2 border-primary/25 bg-primary/5 px-6 py-5">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary flex-shrink-0">
-                  {currentIdx + 1}
-                </div>
-                <h3 className="font-semibold text-foreground text-lg leading-snug">{topic.title}</h3>
-              </div>
+          {/* Section header — flat academic style */}
+          <div className="pb-3 border-b border-muted-foreground/15">
+            <div className="flex items-start justify-between gap-3 mb-1.5">
+              <h3 className="font-extrabold text-red-600 dark:text-red-500 uppercase tracking-wide text-base leading-tight">
+                {currentIdx + 1}. {topic.title}
+              </h3>
               <Badge variant="medium" className="flex-shrink-0">Active</Badge>
             </div>
-            {/* Method-specific hint shown once per section */}
             {config?.hint && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg bg-background/60 border border-border px-3 py-2">
-                <Lightbulb className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+              <div className="mt-2 border-l-2 border-muted-foreground/20 pl-3">
                 <p className="text-xs text-muted-foreground italic">{config.hint}</p>
               </div>
             )}
-            {/* Blurt challenge prompt */}
             {config?.blurtChallenge && (
-              <div className="mt-3 rounded-lg border border-orange-500/25 bg-orange-500/5 px-3 py-2">
-                <p className="text-xs font-semibold text-orange-400 uppercase tracking-wider mb-1">Blurt Challenge</p>
+              <div className="mt-2 border-l-2 border-orange-400/50 pl-3">
+                <p className="text-xs font-semibold text-orange-500 uppercase tracking-wider mb-0.5">Blurt Challenge</p>
                 <p className="text-xs text-muted-foreground">Close this screen for 60 seconds. Write or say everything you know about <strong>{topic.title}</strong>. Then come back and check.</p>
               </div>
             )}
