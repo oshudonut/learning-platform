@@ -31,6 +31,7 @@ import { ConceptualReviewerView } from "./views/ConceptualReviewerView";
 import { RetrievalReviewerView } from "./views/RetrievalReviewerView";
 import { MemoryReviewerView } from "./views/MemoryReviewerView";
 import { RelationalReviewerView } from "./views/RelationalReviewerView";
+import { BoardExamTopicRenderer } from "./board-exam/BoardExamTopicRenderer";
 
 const STUDY_MODE_BADGE: Record<StudyMode, { label: string; cls: string }> = {
   cram:       { label: "Cram", cls: "bg-red-500/10 text-red-400 border-red-500/20" },
@@ -471,7 +472,6 @@ export function ReviewerView({
               </div>
               <Badge variant="medium" className="flex-shrink-0">Active</Badge>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">{topic.coreIdea}</p>
             {/* Method-specific hint shown once per section */}
             {config?.hint && (
               <div className="mt-3 flex items-start gap-2 rounded-lg bg-background/60 border border-border px-3 py-2">
@@ -489,9 +489,12 @@ export function ReviewerView({
           </div>
 
           {/* Topic content */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <TopicContent topic={topic} config={config ?? METHOD_CONFIG.feynman} method={resolvedMethod ?? undefined} />
-          </div>
+          <BoardExamTopicRenderer
+            topic={topic}
+            isLastSection={currentIdx === total - 1}
+            globalMustMemorize={standardReviewer.globalMustMemorize}
+            mnemonics={standardReviewer.mnemonics}
+          />
 
           {/* Mark complete CTA */}
           <Button
@@ -544,47 +547,6 @@ export function ReviewerView({
             </div>
           )}
 
-          {/* Global Must Memorize — shown only on the last section */}
-          {currentIdx === total - 1 && standardReviewer.globalMustMemorize.length > 0 && (
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Target className="h-4 w-4 text-amber-400" />
-                <h3 className="font-semibold text-foreground">Global Must Memorize</h3>
-                <Badge variant="warning" className="ml-auto">High Yield</Badge>
-              </div>
-              <ul className="space-y-2.5">
-                {standardReviewer.globalMustMemorize.map((fact, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm">
-                    <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-bold text-amber-400">
-                      {i + 1}
-                    </span>
-                    <span className="text-foreground/85">{fact}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Mnemonics — shown only on the last section */}
-          {currentIdx === total - 1 && standardReviewer.mnemonics.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Lightbulb className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold text-foreground">Memory Aids</h3>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {standardReviewer.mnemonics.map((m, i) => (
-                  <div key={i} className="rounded-xl border border-border bg-card p-4 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                      <span className="text-xs font-semibold text-foreground">{m.concept}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed pl-5">{m.aid}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </motion.div>
       </AnimatePresence>
     </div>
