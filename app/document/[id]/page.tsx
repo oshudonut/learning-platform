@@ -118,6 +118,11 @@ function DocumentPageInner() {
   const [flashcards, setFlashcards] = useState<LoadState<Flashcard[]>>({ status: "idle" });
   const [progression, setProgression] = useState<DocumentProgression | null>(null);
   const [remediationActive, setRemediationActive] = useState(false);
+  // reviewerKey increments on freshProgression — forces ReviewerView remount to clear stale localIdx
+  const [reviewerKey, setReviewerKey] = useState(0);
+  // stored so the "Try Again" error-retry button can pass method/mode to the reviewer API
+  const [pendingMethod, setPendingMethod] = useState<LearningMethod | null>(null);
+  const [pendingMode, setPendingMode] = useState<StudyMode | null>(null);
 
   // Load document metadata + progression
   useEffect(() => {
@@ -164,6 +169,9 @@ function DocumentPageInner() {
         // a server re-fetch so rebuildSectionStatuses can't restore old completed state.
         setProgression(data.freshProgression);
         setRemediationActive(data.freshProgression.remediationActive ?? false);
+        // Force ReviewerView remount so useState(serverIdx) reinitializes from 0,
+        // not from the stale localIdx value the old instance held.
+        setReviewerKey((k) => k + 1);
       } else if (force || !progression) {
         // Re-fetch progression after force-regeneration (error retry) or initial load
         const progRes = await fetch("/api/progression", {
@@ -183,6 +191,9 @@ function DocumentPageInner() {
   }, [id, doc, progression]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMethodSelect = useCallback(async (method: LearningMethod, mode: StudyMode) => {
+    // Store method/mode so the error-retry "Try Again" path can pass them to the API
+    setPendingMethod(method);
+    setPendingMode(mode);
     // Save profile to progression first, then generate reviewer
     await fetch("/api/progression", {
       method: "POST",
@@ -423,7 +434,7 @@ function DocumentPageInner() {
                         <p className="font-semibold text-foreground">Generation failed</p>
                         <p className="text-sm text-muted-foreground mt-1">{reviewer.error}</p>
                       </div>
-                      <Button variant="outline" onClick={() => loadReviewer(true)}>
+                      <Button variant="outline" onClick={() => loadReviewer(true, pendingMethod ?? undefined, pendingMode ?? undefined)}>
                         <RefreshCw className="h-4 w-4" />Try Again
                       </Button>
                     </div>
@@ -446,6 +457,7 @@ function DocumentPageInner() {
                         </Button>
                       </div>
                       <ReviewerView
+                        key={reviewerKey}
                         reviewer={reviewer.data}
                         progression={progression ?? undefined}
                         documentId={id}
