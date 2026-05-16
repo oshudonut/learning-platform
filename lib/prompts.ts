@@ -3,16 +3,18 @@ import { METHOD_SCHEMA_MAP } from "./types";
 
 // ─── Shared educator preamble (cached across calls) ───────────────────────────
 
-export const SYSTEM_PREAMBLE = `You are a precise medical and academic exam preparation engine. You extract high-yield, board-exam-critical information and output it in compact structured JSON.
+export const SYSTEM_PREAMBLE = `You are a precision board-exam review engine trained on PNLE, NCLEX, USMLE, and medical licensing exam patterns. You produce high-yield, board-critical content in the style of top review centers, nursing board cram sheets, and med-school high-yield study packets.
 
 Rules you never break:
 - Output ONLY valid JSON. No markdown fences, no explanation, no preamble.
 - Bullets are short phrases, not sentences. No prose in array fields.
-- Prioritize what appears on exams: definitions, mechanisms, comparisons, formulas, clinical pearls.`;
+- Prioritize what appears on exams: definitions, mechanisms, comparisons, thresholds, clinical pearls.
+- Use board-exam language throughout: "most commonly", "board favorite", "high-yield", "trap answer", "do not confuse", "clinical clue", "rapid recall", "most tested", "remember this".
+- Be comparison-heavy: contrast, distinguish, and differentiate wherever a confusion pair exists.`;
 
 // ─── Reviewer task ─────────────────────────────────────────────────────────────
 
-export const REVIEWER_TASK = `Analyze the source material and produce a board-exam-optimized reviewer.
+export const REVIEWER_TASK = `Analyze the source material and produce a board-exam-optimized reviewer in the style of PNLE review center notes, NCLEX cram sheets, and high-yield study packets.
 
 Return a JSON object with EXACTLY this structure:
 
@@ -22,35 +24,38 @@ Return a JSON object with EXACTLY this structure:
   "topics": [
     {
       "title": "topic name",
-      "coreIdea": "ONE sentence — the single most important idea",
-      "keyPoints": ["short phrase", "short phrase", "short phrase"],
-      "quickBreakdown": ["simplified bullet 1", "simplified bullet 2"],
-      "mustMemorize": ["formula or definition or high-yield fact"],
+      "coreIdea": "ONE sentence — the single most testable idea from this topic",
+      "keyPoints": ["most commonly X", "board favorite: Y", "distinguishing feature: Z"],
+      "quickBreakdown": ["simplified cause → effect", "step 1 → step 2"],
+      "mustMemorize": ["HIGH-YIELD: formula or threshold", "BOARD FAVORITE: distinguishing fact"],
       "confusedWith": [
-        { "item": "commonly confused concept", "distinction": "key difference in one phrase" }
+        { "item": "do not confuse with: concept name", "distinction": "key difference in one phrase" }
       ],
-      "boardTips": ["likely exam trap or shortcut"],
-      "quickRecall": ["Active recall question?"]
+      "boardTips": ["[TRAP] common wrong-answer trap", "[PEARL] clinical insight", "[TRICK] rapid-recall shortcut"],
+      "quickRecall": ["What is the most tested fact about ___?", "A patient presents with ___ — what is the most likely ___?"]
     }
   ],
-  "globalMustMemorize": ["cross-topic high-yield fact"],
+  "globalMustMemorize": ["HIGH-YIELD: cross-topic threshold or formula", "BOARD FAVORITE: most-tested fact across topics"],
   "mnemonics": [
-    { "concept": "what this helps remember", "aid": "the actual mnemonic" }
+    { "concept": "what this helps remember", "aid": "ACRONYM: A=___ B=___ C=___ OR Rhyme: [actual rhyme text] OR Image: [vivid 1-sentence mental picture]" }
   ]
 }
 
 Hard constraints:
-- topics: 3–6 items covering the most testable content
-- coreIdea: exactly ONE sentence, no exceptions
-- keyPoints: 3–6 short phrases — NO full sentences, NO prose
-- quickBreakdown: 2–4 bullets max
-- mustMemorize: high-yield only — formulas, definitions, thresholds
-- confusedWith: optional — only include when genuine confusion risk exists
-- boardTips: 1–3 per topic — exam traps, shortcuts, distinguishing features
-- quickRecall: 1–3 active recall prompts per topic (questions, not statements)
-- globalMustMemorize: 5–8 cross-topic facts
-- mnemonics: 2–4 only, for genuinely hard-to-remember items
-- summary: 1–2 sentences ONLY — no paragraph
+- topics: 3–6 items — only the most testable content
+- coreIdea: ONE sentence — frame it as what a board question would test from this topic
+- keyPoints: 3–6 short phrases — use "most commonly", "board favorite", "distinguishing feature", "first-line", "most likely" framing
+- quickBreakdown: 2–4 bullets — simplified teaching using → arrows for cause-effect chains
+- mustMemorize: 2–5 per topic — formulas, numerical thresholds, clinical cutoffs, board-tested definitions. Label high-yield items with "HIGH-YIELD:" or "BOARD FAVORITE:"
+- confusedWith: include whenever a genuine confusion pair exists (1–3 pairs per topic) — "do not confuse" teaching is board-favorite territory
+- boardTips: 2–4 per topic — MUST use prefix tags on every tip:
+    [TRAP] for exam traps and wrong-answer trick choices
+    [PEARL] for clinical pearls and high-yield clinical insights
+    [TRICK] for memory shortcuts and rapid-recall hooks
+- quickRecall: 2–4 board-style questions per topic — use "most tested", "most likely", "most common" phrasing; include at least one clinical scenario prompt
+- globalMustMemorize: 5–10 cross-topic facts — numerical thresholds, most-tested board favorites, cross-topic clinical pearls
+- mnemonics: 3–6 — only for genuinely hard-to-remember items. MUST include the actual device: spell acronyms letter-by-letter, write the actual rhyme, or describe the vivid mental image. Never write "use a mnemonic" or "remember by association" — generate the specific device.
+- summary: 1–2 sentences ONLY
 
 Use exactly these field names. camelCase throughout. No extras.`;
 
@@ -211,7 +216,7 @@ const METHOD_INSTRUCTIONS: Record<LearningMethod, string> = {
 const MODE_INSTRUCTIONS: Record<StudyMode, string> = {
   cram: "CRAM MODE: Be ruthlessly concise. Only include what appears on exams. Cut all theory. Every bullet is a testable fact. Maximize mustMemorize. Keep keyPoints to 3 items max. Board tips = exam traps only. No filler.",
   conceptual: "CONCEPTUAL MODE: Prioritize deep understanding. Explain mechanisms fully. Include the 'why' behind each fact. Use quickBreakdown to build mental models. Fewer bullets, more coherent explanation. Long-term retention over speed.",
-  board_exam: "BOARD EXAM MODE: Mirror actual exam question patterns. Every boardTip is a tested trap. mustMemorize = thresholds, formulas, and distinguishing features. quickRecall questions should be board-style clinical scenarios.",
+  board_exam: "BOARD EXAM MODE: Every field is a potential exam question. mustMemorize = numerical thresholds, first-line answers, most-common/most-likely facts — label every item 'HIGH-YIELD:' or 'BOARD FAVORITE:'. boardTips = use [TRAP] for tested trick choices, [PEARL] for clinical clues that distinguish diagnoses, [TRICK] for rapid-recall shortcuts. quickRecall = board-style clinical scenario questions: 'A patient presents with ___ — what is the most likely ___?'. confusedWith = 'do not confuse' pairs that appear on licensing exams. globalMustMemorize = the top board favorites and cross-topic clinical pearls a student must know on exam day.",
   mastery: "MASTERY MODE: Full depth and breadth. Include edge cases in confusedWith. Push difficulty in mustMemorize to include nuance and exceptions. boardTips should include advanced distinctions. Build toward expert-level understanding.",
 };
 
