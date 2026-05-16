@@ -11,7 +11,7 @@ import {
   MemoryReviewerSchema,
   RelationalReviewerSchema,
 } from "@/lib/types";
-import type { LearningMethod, StudyMode, ReviewerSchemaType } from "@/lib/types";
+import type { LearningMethod, StudyMode, ReviewerSchemaType, DocumentProgression } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
     // Error-recovery retries (force=true, no learningMethod in request) are excluded —
     // those didn't produce a new reviewer on the previous attempt, so progress is still valid.
     let progressionReset = false;
+    let freshProgression: DocumentProgression | undefined;
     if (force && learningMethod) {
       const topicCount = ((parsed as { topics?: unknown[] }).topics?.length) ?? 0;
       const prev = await getProgression(id, user.id);
@@ -108,6 +109,9 @@ export async function POST(req: NextRequest) {
       }
       await upsertProgression(fresh);
       progressionReset = true;
+      // Return the fresh progression directly so the client can apply it without
+      // a follow-up GET — avoids rebuildSectionStatuses restoring old completed state.
+      freshProgression = fresh;
     }
 
     return NextResponse.json({
@@ -115,6 +119,7 @@ export async function POST(req: NextRequest) {
       cached: false,
       schemaType,
       progressionReset,
+      freshProgression,
       usage: { cacheReadTokens, cacheWriteTokens },
     });
   } catch (err: unknown) {

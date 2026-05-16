@@ -159,8 +159,13 @@ function DocumentPageInner() {
       setReviewer({ status: "success", data: data.reviewer });
       if (!doc?.hasReviewer) setDoc((d) => d && { ...d, hasReviewer: true });
 
-      // Re-fetch progression after force-regeneration so client reflects the server reset
-      if (force || !progression) {
+      if (data.freshProgression) {
+        // Reviewer API reset progression — apply the fresh state directly without
+        // a server re-fetch so rebuildSectionStatuses can't restore old completed state.
+        setProgression(data.freshProgression);
+        setRemediationActive(data.freshProgression.remediationActive ?? false);
+      } else if (force || !progression) {
+        // Re-fetch progression after force-regeneration (error retry) or initial load
         const progRes = await fetch("/api/progression", {
           method: "POST",
           headers: { "content-type": "application/json" },
