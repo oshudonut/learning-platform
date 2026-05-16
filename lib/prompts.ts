@@ -3,59 +3,123 @@ import { METHOD_SCHEMA_MAP } from "./types";
 
 // ─── Shared educator preamble (cached across calls) ───────────────────────────
 
-export const SYSTEM_PREAMBLE = `You are a precision board-exam review engine trained on PNLE, NCLEX, USMLE, and medical licensing exam patterns. You produce high-yield, board-critical content in the style of top review centers, nursing board cram sheets, and med-school high-yield study packets.
+export const SYSTEM_PREAMBLE = `You are a precision board-exam review engine trained on PNLE, NCLEX, USMLE, and Philippine radiologic technology licensing exam patterns. You produce high-yield, board-critical content in the style of top Philippine review centers, nursing board cram sheets, and med-school high-yield study packets.
 
 Rules you never break:
 - Output ONLY valid JSON. No markdown fences, no explanation, no preamble.
-- Bullets are short phrases, not sentences. No prose in array fields.
-- Prioritize what appears on exams: definitions, mechanisms, comparisons, thresholds, clinical pearls.
-- Use board-exam language throughout: "most commonly", "board favorite", "high-yield", "trap answer", "do not confuse", "clinical clue", "rapid recall", "most tested", "remember this".
-- Be comparison-heavy: contrast, distinguish, and differentiate wherever a confusion pair exists.`;
+- Bullets are SHORT PHRASES — not sentences. No prose in array fields.
+- Preserve ALL medical terminology, radiographic signs, eponyms, classic signs, abbreviations, formulas, and numerical thresholds exactly as found in the source material.
+- Prioritize what appears on exams: mechanisms, comparisons, clinical thresholds, first-line answers, most-common facts, classic presentations, named signs, radiographic findings.
+- Use board-exam language: "most commonly", "first-line", "pathognomonic", "do not confuse", "gold standard", "most feared complication", "most tested".
+- Be comparison-heavy: contrast, distinguish, and differentiate wherever a confusion pair exists.
+- Apply semantic prefix labels when categorizing clinical facts in keyPoints, mustMemorize, and globalMustMemorize:
+    DX: — diagnostic criteria, gold-standard tests, confirmatory findings
+    TX: — first-line treatments, drugs of choice, nursing interventions, surgical management
+    S/S: — signs and symptoms, classic presentations, pathognomonic findings
+    IMAGING: — X-ray signs, CT/MRI patterns, ECG changes, classic radiographic findings
+    COMPLICATION: — complications, adverse effects, sequelae, most feared outcomes
+    HIGH-YIELD: — high-priority board facts that span multiple categories
+    BOARD FAVORITE: — most frequently tested item in this cluster`;
 
 // ─── Reviewer task ─────────────────────────────────────────────────────────────
 
-export const REVIEWER_TASK = `Analyze the source material and produce a board-exam-optimized reviewer in the style of PNLE review center notes, NCLEX cram sheets, and high-yield study packets.
+export const REVIEWER_TASK = `Analyze the source material and produce a board-exam-optimized reviewer in the style of PNLE review center notes, NCLEX cram sheets, and Philippine radiologic technology board reviewers.
+
+CRITICAL FORMATTING RULES:
+- All array fields = SHORT PHRASES only. No full sentences. No prose.
+- Preserve all abbreviations, eponyms, radiographic signs, classic presentations, and named criteria exactly as they appear in the source.
+- Use → arrows for pathophysiology chains in quickBreakdown.
+- Apply semantic prefix labels in keyPoints, mustMemorize, and globalMustMemorize (system below).
+- Dense and compact over explanatory and verbose.
+- Avoid conversational tone, motivational language, and transitional phrases.
+
+SEMANTIC PREFIX LABELS — apply in keyPoints, mustMemorize, globalMustMemorize:
+  DX:          diagnostic criteria, confirmatory tests, gold-standard investigations
+  TX:          first-line treatment, drug of choice, nursing/surgical management
+  S/S:         signs and symptoms, classic presentation, pathognomonic findings
+  IMAGING:     radiographic signs, X-ray/CT/MRI/ECG patterns, named imaging findings
+  COMPLICATION: complications, adverse effects, most feared outcomes, sequelae
+  HIGH-YIELD:  high-priority board facts that span multiple categories
+  BOARD FAVORITE: most frequently tested item in this cluster
 
 Return a JSON object with EXACTLY this structure:
 
 {
   "title": "concise topic title",
-  "summary": "1-2 sentences MAX — what this document is about",
+  "summary": "1-2 sentences MAX — what this document covers",
   "topics": [
     {
       "title": "topic name",
       "coreIdea": "ONE sentence — the single most testable idea from this topic",
-      "keyPoints": ["most commonly X", "board favorite: Y", "distinguishing feature: Z"],
-      "quickBreakdown": ["simplified cause → effect", "step 1 → step 2"],
-      "mustMemorize": ["HIGH-YIELD: formula or threshold", "BOARD FAVORITE: distinguishing fact"],
-      "confusedWith": [
-        { "item": "do not confuse with: concept name", "distinction": "key difference in one phrase" }
+      "keyPoints": [
+        "S/S: classic presentation or hallmark finding",
+        "DX: gold-standard test or diagnostic criteria",
+        "TX: first-line treatment or management principle",
+        "IMAGING: named radiographic sign or classic finding",
+        "COMPLICATION: most common or most feared complication"
       ],
-      "boardTips": ["[TRAP] common wrong-answer trap", "[PEARL] clinical insight", "[TRICK] rapid-recall shortcut"],
-      "quickRecall": ["What is the most tested fact about ___?", "A patient presents with ___ — what is the most likely ___?"]
+      "quickBreakdown": [
+        "risk factor/cause → mechanism → clinical result",
+        "pathophysiology step 1 → step 2 → sign or symptom"
+      ],
+      "mustMemorize": [
+        "HIGH-YIELD: specific numerical threshold, formula, or cutoff",
+        "BOARD FAVORITE: most-tested distinguishing fact",
+        "DX: confirmatory test + expected result",
+        "TX: drug of choice + key clinical caveat",
+        "IMAGING: named X-ray or ECG sign"
+      ],
+      "confusedWith": [
+        { "item": "similar condition or concept", "distinction": "single key differentiator" }
+      ],
+      "boardTips": [
+        "[TRAP] common wrong-answer — brief explanation why it is wrong",
+        "[PEARL] clinical clue that clinches the diagnosis",
+        "[TRICK] rapid-recall shortcut for a hard fact"
+      ],
+      "quickRecall": [
+        "A patient presents with [classic signs] — most likely diagnosis?",
+        "Gold standard for diagnosing ___ is?",
+        "First-line treatment for ___ is?"
+      ]
     }
   ],
-  "globalMustMemorize": ["HIGH-YIELD: cross-topic threshold or formula", "BOARD FAVORITE: most-tested fact across topics"],
+  "globalMustMemorize": [
+    "HIGH-YIELD: most-tested threshold or formula across topics",
+    "BOARD FAVORITE: cross-topic clinical pearl",
+    "IMAGING: board-tested named radiographic sign"
+  ],
   "mnemonics": [
     { "concept": "what this helps remember", "aid": "ACRONYM: A=___ B=___ C=___ OR Rhyme: [actual rhyme text] OR Image: [vivid 1-sentence mental picture]" }
   ]
 }
 
 Hard constraints:
-- topics: 3–6 items — only the most testable content
-- coreIdea: ONE sentence — frame it as what a board question would test from this topic
-- keyPoints: 3–6 short phrases — use "most commonly", "board favorite", "distinguishing feature", "first-line", "most likely" framing
-- quickBreakdown: 2–4 bullets — simplified teaching using → arrows for cause-effect chains
-- mustMemorize: 2–5 per topic — formulas, numerical thresholds, clinical cutoffs, board-tested definitions. Label high-yield items with "HIGH-YIELD:" or "BOARD FAVORITE:"
-- confusedWith: include whenever a genuine confusion pair exists (1–3 pairs per topic) — "do not confuse" teaching is board-favorite territory
-- boardTips: 2–4 per topic — MUST use prefix tags on every tip:
-    [TRAP] for exam traps and wrong-answer trick choices
-    [PEARL] for clinical pearls and high-yield clinical insights
-    [TRICK] for memory shortcuts and rapid-recall hooks
-- quickRecall: 2–4 board-style questions per topic — use "most tested", "most likely", "most common" phrasing; include at least one clinical scenario prompt
-- globalMustMemorize: 5–10 cross-topic facts — numerical thresholds, most-tested board favorites, cross-topic clinical pearls
-- mnemonics: 3–6 — only for genuinely hard-to-remember items. MUST include the actual device: spell acronyms letter-by-letter, write the actual rhyme, or describe the vivid mental image. Never write "use a mnemonic" or "remember by association" — generate the specific device.
+- topics: 3–6 (most testable content only)
+- coreIdea: ONE sentence — frame as what a board question would test
+- keyPoints: 3–7 short labeled phrases — use DX: / TX: / S/S: / IMAGING: / COMPLICATION: for clinical facts; use "most commonly", "first-line", "pathognomonic" for any unlabeled items
+- quickBreakdown: 2–4 bullets — pathophysiology or mechanism chains using → arrows; preserve named syndromes, eponyms, and classic pathway names
+- mustMemorize: 3–6 per topic — formulas, numerical thresholds, named criteria, board-tested drugs and doses. EVERY item must carry a prefix label (see above)
+- confusedWith: 1–3 pairs whenever a board-tested confusion pair exists — "do not confuse" is board-favorite territory
+- boardTips: 2–4 per topic — prefix tags MANDATORY on every tip: [TRAP] [PEARL] [TRICK]
+- quickRecall: 2–4 board-style questions per topic — clinical scenario, gold-standard, first-line format
+- globalMustMemorize: 5–10 cross-topic high-yield facts — ALL labeled with a prefix; include cross-system thresholds and most-tested named criteria
+- mnemonics: 3–6 — spell acronyms letter-by-letter, write the actual rhyme text, or describe a vivid 1-sentence mental image; never write "use a mnemonic" without the actual device
 - summary: 1–2 sentences ONLY
+
+REFERENCE EXAMPLE — well-formed output for a clinical topic (Pulmonary Embolism):
+keyPoints:
+  "S/S: sudden dyspnea + pleuritic chest pain + hemoptysis — classic PE triad"
+  "DX: CT pulmonary angiography (gold standard); Wells score guides pre-test probability"
+  "TX: anticoagulation first-line (LMWH); massive PE → thrombolytics or surgical embolectomy"
+  "IMAGING: Hampton's hump (wedge-shaped pleural-based opacity) + Westermark sign (oligemia) on CXR"
+  "COMPLICATION: massive PE → obstructive shock → cardiac arrest (most feared)"
+mustMemorize:
+  "HIGH-YIELD: D-dimer <500 ng/mL effectively excludes PE in low-probability patients"
+  "BOARD FAVORITE: most common PE source = proximal DVT of lower extremity (90%)"
+  "IMAGING: S1Q3T3 on ECG — right heart strain (board trap: do NOT diagnose as MI)"
+  "TX: start anticoagulation on clinical suspicion; do NOT wait for imaging confirmation"
+  "COMPLICATION: paradoxical embolism via patent foramen ovale → systemic arterial occlusion"
 
 Use exactly these field names. camelCase throughout. No extras.`;
 
@@ -216,7 +280,13 @@ const METHOD_INSTRUCTIONS: Record<LearningMethod, string> = {
 const MODE_INSTRUCTIONS: Record<StudyMode, string> = {
   cram: "CRAM MODE: Be ruthlessly concise. Only include what appears on exams. Cut all theory. Every bullet is a testable fact. Maximize mustMemorize. Keep keyPoints to 3 items max. Board tips = exam traps only. No filler.",
   conceptual: "CONCEPTUAL MODE: Prioritize deep understanding. Explain mechanisms fully. Include the 'why' behind each fact. Use quickBreakdown to build mental models. Fewer bullets, more coherent explanation. Long-term retention over speed.",
-  board_exam: "BOARD EXAM MODE: Every field is a potential exam question. mustMemorize = numerical thresholds, first-line answers, most-common/most-likely facts — label every item 'HIGH-YIELD:' or 'BOARD FAVORITE:'. boardTips = use [TRAP] for tested trick choices, [PEARL] for clinical clues that distinguish diagnoses, [TRICK] for rapid-recall shortcuts. quickRecall = board-style clinical scenario questions: 'A patient presents with ___ — what is the most likely ___?'. confusedWith = 'do not confuse' pairs that appear on licensing exams. globalMustMemorize = the top board favorites and cross-topic clinical pearls a student must know on exam day.",
+  board_exam: `BOARD EXAM MODE: Every field is a potential exam question. Dense, labeled, and clinical throughout.
+- keyPoints: label EVERY clinical fact — DX: / TX: / S/S: / IMAGING: / COMPLICATION: prefixes required; no unlabeled clinical items
+- mustMemorize: ALL items must carry a prefix — HIGH-YIELD: / BOARD FAVORITE: / DX: / TX: / S/S: / IMAGING: / COMPLICATION:; include numerical thresholds, named diagnostic criteria, first-line drugs, radiographic signs, and formulas
+- boardTips: [TRAP] for tested wrong-answer traps, [PEARL] for clinical clues that clinch the diagnosis, [TRICK] for rapid-recall shortcuts — prefix tag is mandatory on every tip
+- quickRecall: board-style clinical scenario questions only — "A patient presents with ___ — most likely diagnosis?", "Gold standard for ___?", "First-line TX for ___?"
+- confusedWith: do-not-confuse pairs that appear on licensing exams — mandatory for any topic with look-alike conditions, similar presentations, or overlapping radiographic findings
+- globalMustMemorize: top board favorites and cross-topic clinical pearls — all labeled with prefix; include cross-system thresholds, most-tested named criteria, and classic radiographic signs`,
   mastery: "MASTERY MODE: Full depth and breadth. Include edge cases in confusedWith. Push difficulty in mustMemorize to include nuance and exceptions. boardTips should include advanced distinctions. Build toward expert-level understanding.",
 };
 
