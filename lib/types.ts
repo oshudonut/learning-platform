@@ -627,3 +627,67 @@ export type MatchAnswer = {
   gotPoint: boolean;
   answeredAt: string;
 };
+
+// ─── Study Planner ────────────────────────────────────────────────────────────
+
+export type StudyPlanStatus = "active" | "paused" | "completed" | "archived";
+
+export type StudyPlanItemType =
+  | "read_sections"
+  | "quiz"
+  | "flashcard_review"
+  | "remediation"
+  | "retention_review"
+  | "checkpoint";
+
+export type StudyPlan = {
+  id: string;
+  userId: string;
+  title: string;
+  examDate: number;   // UTC ms
+  dailyHours: number;
+  status: StudyPlanStatus;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type StudyPlanDocument = {
+  id: string;
+  planId: string;
+  documentId: string;
+  priority: number;       // 1 = highest
+  weakTopicWeight: number; // 0.5–2.0 multiplier
+  paused: boolean;
+  addedAt: number;
+};
+
+export type StudyPlanItem = {
+  id: string;
+  planId: string;
+  documentId: string;
+  itemType: StudyPlanItemType;
+  scheduledDate: number;  // UTC ms of the day's midnight
+  completedAt: number | null;
+  skippedAt: number | null;
+  sectionIndices: number[];
+  estimatedMins: number;
+  metadata: Record<string, unknown>;
+  position: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ReviewEventType = "flashcard_review" | "topic_review" | "quiz_retry";
+
+export type ReviewScheduleEvent = {
+  id: string;
+  userId: string;
+  planId: string | null;
+  documentId: string;
+  eventType: ReviewEventType;
+  dueAt: number;
+  intervalDays: number;
+  easeFactor: number;
+  completedAt: number | null;
+  createdAt: number;
+};

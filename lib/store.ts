@@ -27,6 +27,10 @@ import type {
   QuizQuestion,
   Folder,
   AnyReviewer,
+  StudyPlan,
+  StudyPlanDocument,
+  StudyPlanItem,
+  ReviewScheduleEvent,
 } from "./types";
 export { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
 import { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
@@ -2011,4 +2015,298 @@ export async function getCompanionCallCount(
     .gte("created_at", sinceTimestamp);
   if (error) throw new Error(`getCompanionCallCount: ${error.message}`);
   return count ?? 0;
+}
+
+// ─── Study Planner ────────────────────────────────────────────────────────────
+
+function rowToPlan(row: Record<string, unknown>): StudyPlan {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    title: row.title as string,
+    examDate: row.exam_date as number,
+    dailyHours: row.daily_hours as number,
+    status: row.status as StudyPlan["status"],
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
+  };
+}
+
+function rowToPlanDoc(row: Record<string, unknown>): StudyPlanDocument {
+  return {
+    id: row.id as string,
+    planId: row.plan_id as string,
+    documentId: row.document_id as string,
+    priority: row.priority as number,
+    weakTopicWeight: row.weak_topic_weight as number,
+    paused: row.paused as boolean,
+    addedAt: row.added_at as number,
+  };
+}
+
+function rowToPlanItem(row: Record<string, unknown>): StudyPlanItem {
+  return {
+    id: row.id as string,
+    planId: row.plan_id as string,
+    documentId: row.document_id as string,
+    itemType: row.item_type as StudyPlanItem["itemType"],
+    scheduledDate: row.scheduled_date as number,
+    completedAt: (row.completed_at as number | null) ?? null,
+    skippedAt: (row.skipped_at as number | null) ?? null,
+    sectionIndices: (row.section_indices as number[]) ?? [],
+    estimatedMins: row.estimated_mins as number,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    position: row.position as number,
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
+  };
+}
+
+function rowToReviewEvent(row: Record<string, unknown>): ReviewScheduleEvent {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    planId: (row.plan_id as string | null) ?? null,
+    documentId: row.document_id as string,
+    eventType: row.event_type as ReviewScheduleEvent["eventType"],
+    dueAt: row.due_at as number,
+    intervalDays: row.interval_days as number,
+    easeFactor: row.ease_factor as number,
+    completedAt: (row.completed_at as number | null) ?? null,
+    createdAt: row.created_at as number,
+  };
+}
+
+export async function createStudyPlan(plan: StudyPlan): Promise<void> {
+  const { error } = await supabase.from("study_plans").insert({
+    id: plan.id,
+    user_id: plan.userId,
+    title: plan.title,
+    exam_date: plan.examDate,
+    daily_hours: plan.dailyHours,
+    status: plan.status,
+    created_at: plan.createdAt,
+    updated_at: plan.updatedAt,
+  });
+  if (error) throw new Error(`createStudyPlan: ${error.message}`);
+}
+
+export async function getStudyPlan(planId: string, userId: string): Promise<StudyPlan | null> {
+  const { data, error } = await supabase
+    .from("study_plans")
+    .select("*")
+    .eq("id", planId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`getStudyPlan: ${error.message}`);
+  if (!data) return null;
+  return rowToPlan(data as Record<string, unknown>);
+}
+
+export async function listStudyPlans(userId: string): Promise<StudyPlan[]> {
+  const { data, error } = await supabase
+    .from("study_plans")
+    .select("*")
+    .eq("user_id", userId)
+    .neq("status", "archived")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`listStudyPlans: ${error.message}`);
+  return (data ?? []).map((r) => rowToPlan(r as Record<string, unknown>));
+}
+
+export async function updateStudyPlan(
+  planId: string,
+  userId: string,
+  patch: Partial<Pick<StudyPlan, "title" | "examDate" | "dailyHours" | "status">>,
+): Promise<StudyPlan> {
+  const update: Record<string, unknown> = { updated_at: Date.now() };
+  if (patch.title !== undefined) update.title = patch.title;
+  if (patch.examDate !== undefined) update.exam_date = patch.examDate;
+  if (patch.dailyHours !== undefined) update.daily_hours = patch.dailyHours;
+  if (patch.status !== undefined) update.status = patch.status;
+
+  const { data, error } = await supabase
+    .from("study_plans")
+    .update(update)
+    .eq("id", planId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateStudyPlan: ${error.message}`);
+  return rowToPlan(data as Record<string, unknown>);
+}
+
+export async function deleteStudyPlan(planId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("study_plans")
+    .delete()
+    .eq("id", planId)
+    .eq("user_id", userId);
+  if (error) throw new Error(`deleteStudyPlan: ${error.message}`);
+}
+
+export async function addStudyPlanDocument(planDoc: StudyPlanDocument): Promise<void> {
+  const { error } = await supabase.from("study_plan_documents").insert({
+    id: planDoc.id,
+    plan_id: planDoc.planId,
+    document_id: planDoc.documentId,
+    priority: planDoc.priority,
+    weak_topic_weight: planDoc.weakTopicWeight,
+    paused: planDoc.paused,
+    added_at: planDoc.addedAt,
+  });
+  if (error) throw new Error(`addStudyPlanDocument: ${error.message}`);
+}
+
+export async function getStudyPlanDocuments(planId: string): Promise<StudyPlanDocument[]> {
+  const { data, error } = await supabase
+    .from("study_plan_documents")
+    .select("*")
+    .eq("plan_id", planId)
+    .order("priority", { ascending: true });
+  if (error) throw new Error(`getStudyPlanDocuments: ${error.message}`);
+  return (data ?? []).map((r) => rowToPlanDoc(r as Record<string, unknown>));
+}
+
+export async function updateStudyPlanDocument(
+  id: string,
+  patch: { priority?: number; weakTopicWeight?: number; paused?: boolean },
+): Promise<void> {
+  const update: Record<string, unknown> = {};
+  if (patch.priority !== undefined) update.priority = patch.priority;
+  if (patch.weakTopicWeight !== undefined) update.weak_topic_weight = patch.weakTopicWeight;
+  if (patch.paused !== undefined) update.paused = patch.paused;
+  const { error } = await supabase.from("study_plan_documents").update(update).eq("id", id);
+  if (error) throw new Error(`updateStudyPlanDocument: ${error.message}`);
+}
+
+export async function removeStudyPlanDocument(planId: string, documentId: string): Promise<void> {
+  const { error } = await supabase
+    .from("study_plan_documents")
+    .delete()
+    .eq("plan_id", planId)
+    .eq("document_id", documentId);
+  if (error) throw new Error(`removeStudyPlanDocument: ${error.message}`);
+}
+
+export async function createStudyPlanItems(items: StudyPlanItem[]): Promise<void> {
+  if (items.length === 0) return;
+  const { error } = await supabase.from("study_plan_items").insert(
+    items.map((item) => ({
+      id: item.id,
+      plan_id: item.planId,
+      document_id: item.documentId,
+      item_type: item.itemType,
+      scheduled_date: item.scheduledDate,
+      completed_at: item.completedAt,
+      skipped_at: item.skippedAt,
+      section_indices: item.sectionIndices,
+      estimated_mins: item.estimatedMins,
+      metadata: item.metadata,
+      position: item.position,
+      created_at: item.createdAt,
+      updated_at: item.updatedAt,
+    })),
+  );
+  if (error) throw new Error(`createStudyPlanItems: ${error.message}`);
+}
+
+export async function getStudyPlanItems(
+  planId: string,
+  options: { dateFrom?: number; dateTo?: number; includeCompleted?: boolean } = {},
+): Promise<StudyPlanItem[]> {
+  let q = supabase
+    .from("study_plan_items")
+    .select("*")
+    .eq("plan_id", planId)
+    .order("scheduled_date", { ascending: true })
+    .order("position", { ascending: true });
+
+  if (options.dateFrom !== undefined) q = q.gte("scheduled_date", options.dateFrom);
+  if (options.dateTo !== undefined) q = q.lte("scheduled_date", options.dateTo);
+  if (!options.includeCompleted) {
+    q = q.is("completed_at", null);
+  }
+
+  const { data, error } = await q;
+  if (error) throw new Error(`getStudyPlanItems: ${error.message}`);
+  return (data ?? []).map((r) => rowToPlanItem(r as Record<string, unknown>));
+}
+
+export async function updateStudyPlanItem(
+  id: string,
+  planId: string,
+  patch: Partial<Pick<StudyPlanItem, "completedAt" | "skippedAt" | "scheduledDate" | "position">>,
+): Promise<StudyPlanItem> {
+  const update: Record<string, unknown> = { updated_at: Date.now() };
+  if (patch.completedAt !== undefined) update.completed_at = patch.completedAt;
+  if (patch.skippedAt !== undefined) update.skipped_at = patch.skippedAt;
+  if (patch.scheduledDate !== undefined) update.scheduled_date = patch.scheduledDate;
+  if (patch.position !== undefined) update.position = patch.position;
+
+  const { data, error } = await supabase
+    .from("study_plan_items")
+    .update(update)
+    .eq("id", id)
+    .eq("plan_id", planId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateStudyPlanItem: ${error.message}`);
+  return rowToPlanItem(data as Record<string, unknown>);
+}
+
+export async function deleteStudyPlanItemsByDocument(planId: string, documentId: string): Promise<void> {
+  const { error } = await supabase
+    .from("study_plan_items")
+    .delete()
+    .eq("plan_id", planId)
+    .eq("document_id", documentId)
+    .is("completed_at", null); // keep completed items as history
+  if (error) throw new Error(`deleteStudyPlanItemsByDocument: ${error.message}`);
+}
+
+export async function createReviewScheduleEvent(event: ReviewScheduleEvent): Promise<void> {
+  const { error } = await supabase.from("review_schedule_events").insert({
+    id: event.id,
+    user_id: event.userId,
+    plan_id: event.planId,
+    document_id: event.documentId,
+    event_type: event.eventType,
+    due_at: event.dueAt,
+    interval_days: event.intervalDays,
+    ease_factor: event.easeFactor,
+    completed_at: event.completedAt,
+    created_at: event.createdAt,
+  });
+  if (error) throw new Error(`createReviewScheduleEvent: ${error.message}`);
+}
+
+export async function getDueReviewEvents(
+  userId: string,
+  beforeMs: number,
+): Promise<ReviewScheduleEvent[]> {
+  const { data, error } = await supabase
+    .from("review_schedule_events")
+    .select("*")
+    .eq("user_id", userId)
+    .lte("due_at", beforeMs)
+    .is("completed_at", null)
+    .order("due_at", { ascending: true });
+  if (error) throw new Error(`getDueReviewEvents: ${error.message}`);
+  return (data ?? []).map((r) => rowToReviewEvent(r as Record<string, unknown>));
+}
+
+export async function completeReviewEvent(
+  id: string,
+  userId: string,
+): Promise<ReviewScheduleEvent> {
+  const { data, error } = await supabase
+    .from("review_schedule_events")
+    .update({ completed_at: Date.now() })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw new Error(`completeReviewEvent: ${error.message}`);
+  return rowToReviewEvent(data as Record<string, unknown>);
 }
