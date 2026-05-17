@@ -26,6 +26,7 @@ import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
 import { TutorChat } from "@/components/tutor/TutorChat";
 import { Button } from "@/components/ui/button";
 import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode } from "@/lib/types";
+import type { ReviewerHighlight } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type Tab = "review" | "quiz" | "flashcards" | "tutor";
@@ -119,6 +120,7 @@ function DocumentPageInner() {
   const [progression, setProgression] = useState<DocumentProgression | null>(null);
   const [remediationActive, setRemediationActive] = useState(false);
   const [notes, setNotes] = useState<Map<number, { noteText: string; confusionLevel: number | null }>>(new Map());
+  const [highlights, setHighlights] = useState<ReviewerHighlight[]>([]);
   // reviewerKey increments on freshProgression — forces ReviewerView remount to clear stale localIdx
   const [reviewerKey, setReviewerKey] = useState(0);
   // stored so the "Try Again" error-retry button can pass method/mode to the reviewer API
@@ -164,6 +166,12 @@ function DocumentPageInner() {
         }
       })
       .catch(() => null);
+
+    // Load highlights (non-blocking)
+    fetch(`/api/highlights?documentId=${id}`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data.highlights)) setHighlights(data.highlights as ReviewerHighlight[]); })
+      .catch(() => null);
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadReviewer = useCallback(async (force = false, method?: LearningMethod, mode?: StudyMode) => {
@@ -187,6 +195,11 @@ function DocumentPageInner() {
         // Force ReviewerView remount so useState(serverIdx) reinitializes from 0,
         // not from the stale localIdx value the old instance held.
         setReviewerKey((k) => k + 1);
+        // Refetch highlights to reflect stale status set by the reviewer API
+        fetch(`/api/highlights?documentId=${id}`)
+          .then((r) => r.json())
+          .then((d) => { if (Array.isArray(d.highlights)) setHighlights(d.highlights as ReviewerHighlight[]); })
+          .catch(() => null);
       } else if (force || !progression) {
         // Re-fetch progression after force-regeneration (error retry) or initial load
         const progRes = await fetch("/api/progression", {
@@ -471,6 +484,12 @@ function DocumentPageInner() {
                           <RefreshCw className="h-3.5 w-3.5" />Regenerate
                         </Button>
                       </div>
+                      {highlights.some((h) => h.isStale) && (
+                        <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                          <span className="font-semibold">Some highlights are stale</span>
+                          <span className="text-amber-600/80 dark:text-amber-500/80">— the reviewer was regenerated. Click stale highlights to remove them.</span>
+                        </div>
+                      )}
                       <ReviewerView
                         key={reviewerKey}
                         reviewer={reviewer.data}
@@ -479,6 +498,9 @@ function DocumentPageInner() {
                         learningMethod={progression?.learningMethod}
                         studyMode={progression?.studyMode}
                         notes={notes}
+                        highlights={highlights}
+                        onHighlightCreated={(h) => setHighlights((prev) => [...prev, h])}
+                        onHighlightDeleted={(hId) => setHighlights((prev) => prev.filter((h) => h.id !== hId))}
                         onSectionComplete={handleSectionComplete}
                         onStartFlashcards={handleStartFlashcards}
                       />

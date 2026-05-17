@@ -1800,3 +1800,104 @@ export async function insertLearningEvent(
     console.error("insertLearningEvent unexpected error:", err);
   }
 }
+
+// ─── Reviewer Highlights ──────────────────────────────────────────────────────
+
+export type ReviewerHighlight = {
+  id: string;
+  userId: string;
+  documentId: string;
+  topicIndex: number;
+  fieldName: string;
+  itemIndex: number;
+  charStart: number;
+  charEnd: number;
+  colorTag: "yellow" | "green" | "blue" | "pink";
+  isStale: boolean;
+  createdAt: number;
+};
+
+function rowToHighlight(row: Record<string, unknown>): ReviewerHighlight {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    documentId: row.document_id as string,
+    topicIndex: row.topic_index as number,
+    fieldName: row.field_name as string,
+    itemIndex: row.item_index as number,
+    charStart: row.char_start as number,
+    charEnd: row.char_end as number,
+    colorTag: (row.color_tag as ReviewerHighlight["colorTag"]) ?? "yellow",
+    isStale: (row.is_stale as boolean) ?? false,
+    createdAt: row.created_at as number,
+  };
+}
+
+export async function createHighlight(
+  userId: string,
+  documentId: string,
+  topicIndex: number,
+  fieldName: string,
+  itemIndex: number,
+  charStart: number,
+  charEnd: number,
+  colorTag: ReviewerHighlight["colorTag"],
+): Promise<ReviewerHighlight> {
+  const { data, error } = await supabase
+    .from("reviewer_highlights")
+    .insert({
+      user_id: userId,
+      document_id: documentId,
+      topic_index: topicIndex,
+      field_name: fieldName,
+      item_index: itemIndex,
+      char_start: charStart,
+      char_end: charEnd,
+      color_tag: colorTag,
+      is_stale: false,
+      created_at: Date.now(),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`createHighlight: ${error.message}`);
+  return rowToHighlight(data as Record<string, unknown>);
+}
+
+export async function getHighlightsByDocument(
+  documentId: string,
+  userId: string,
+): Promise<ReviewerHighlight[]> {
+  const { data, error } = await supabase
+    .from("reviewer_highlights")
+    .select("*")
+    .eq("document_id", documentId)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`getHighlightsByDocument: ${error.message}`);
+  return (data ?? []).map((r) => rowToHighlight(r as Record<string, unknown>));
+}
+
+export async function markHighlightsStale(
+  documentId: string,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("reviewer_highlights")
+    .update({ is_stale: true })
+    .eq("document_id", documentId)
+    .eq("user_id", userId)
+    .eq("is_stale", false);
+  if (error) throw new Error(`markHighlightsStale: ${error.message}`);
+}
+
+export async function deleteHighlight(
+  id: string,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("reviewer_highlights")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw new Error(`deleteHighlight: ${error.message}`);
+}

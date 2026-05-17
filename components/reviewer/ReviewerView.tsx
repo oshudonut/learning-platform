@@ -32,6 +32,7 @@ import { RetrievalReviewerView } from "./views/RetrievalReviewerView";
 import { MemoryReviewerView } from "./views/MemoryReviewerView";
 import { RelationalReviewerView } from "./views/RelationalReviewerView";
 import { BoardExamTopicRenderer } from "./board-exam/BoardExamTopicRenderer";
+import type { ReviewerHighlight } from "@/lib/store";
 
 const STUDY_MODE_BADGE: Record<StudyMode, { label: string; cls: string }> = {
   cram:       { label: "Cram", cls: "bg-red-500/10 text-red-400 border-red-500/20" },
@@ -350,6 +351,9 @@ export function ReviewerView({
   learningMethod,
   studyMode,
   notes,
+  highlights,
+  onHighlightCreated,
+  onHighlightDeleted,
   onSectionComplete,
   onStartFlashcards,
 }: {
@@ -359,6 +363,9 @@ export function ReviewerView({
   learningMethod?: LearningMethod | null;
   studyMode?: StudyMode | null;
   notes?: Map<number, NoteData>;
+  highlights?: ReviewerHighlight[];
+  onHighlightCreated?: (h: ReviewerHighlight) => void;
+  onHighlightDeleted?: (id: string) => void;
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
 }) {
@@ -496,6 +503,9 @@ export function ReviewerView({
             documentId={documentId}
             topicIndex={currentIdx}
             note={notes?.get(currentIdx) ?? null}
+            highlights={highlights?.filter((h) => h.topicIndex === currentIdx)}
+            onHighlightCreated={onHighlightCreated}
+            onHighlightDeleted={onHighlightDeleted}
           />
 
           {/* Mark complete CTA */}

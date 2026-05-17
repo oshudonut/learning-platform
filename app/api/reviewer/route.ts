@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
 import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig } from "@/lib/prompts";
-import { getDocument, updateDocument, computeContentHash, getProgression, upsertProgression } from "@/lib/store";
+import { getDocument, updateDocument, computeContentHash, getProgression, upsertProgression, markHighlightsStale } from "@/lib/store";
 import { buildInitialProgression } from "@/lib/progression";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import {
@@ -108,6 +108,8 @@ export async function POST(req: NextRequest) {
         fresh.createdAt = prev.createdAt;
       }
       await upsertProgression(fresh);
+      // Mark existing highlights stale so the UI can signal them to the user
+      await markHighlightsStale(id, user.id);
       progressionReset = true;
       // Return the fresh progression directly so the client can apply it without
       // a follow-up GET — avoids rebuildSectionStatuses restoring old completed state.

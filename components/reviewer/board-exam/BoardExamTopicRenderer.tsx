@@ -6,10 +6,11 @@ import { BoardTipStrip } from "@/components/reviewer/primitives/BoardTipStrip";
 import { DiffTable } from "@/components/reviewer/primitives/DiffTable";
 import { MnemonicCard } from "@/components/reviewer/primitives/MnemonicCard";
 import { SectionLabel } from "@/components/reviewer/primitives/SectionLabel";
-import { SemanticLabel } from "@/components/reviewer/primitives/SemanticLabel";
 import { formatBoardText } from "@/components/reviewer/primitives/formatBoardText";
+import { HighlightableText } from "@/components/reviewer/primitives/HighlightableText";
 import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
 import type { ReviewerTopic } from "@/lib/types";
+import type { ReviewerHighlight } from "@/lib/store";
 
 interface BoardExamTopicRendererProps {
   topic: ReviewerTopic;
@@ -19,6 +20,9 @@ interface BoardExamTopicRendererProps {
   documentId?: string;
   topicIndex?: number;
   note?: { noteText: string; confusionLevel: number | null } | null;
+  highlights?: ReviewerHighlight[];
+  onHighlightCreated?: (h: ReviewerHighlight) => void;
+  onHighlightDeleted?: (id: string) => void;
 }
 
 const STOP_WORDS = new Set([
@@ -51,15 +55,45 @@ export function BoardExamTopicRenderer({
   documentId,
   topicIndex,
   note,
+  highlights = [],
+  onHighlightCreated,
+  onHighlightDeleted,
 }: BoardExamTopicRendererProps) {
   const topicMnemonics = isLastSection ? [] : matchMnemonics(mnemonics, topic);
+
+  // Whether highlighting is active for this renderer
+  const canHighlight = documentId !== undefined && topicIndex !== undefined
+    && onHighlightCreated !== undefined && onHighlightDeleted !== undefined;
+
+  function fieldHighlights(fieldName: string, itemIndex: number) {
+    return highlights.filter(h => h.fieldName === fieldName && h.itemIndex === itemIndex);
+  }
+
+  function renderText(text: string, fieldName: string, itemIndex: number) {
+    if (canHighlight) {
+      return (
+        <HighlightableText
+          text={text}
+          highlights={fieldHighlights(fieldName, itemIndex)}
+          documentId={documentId!}
+          topicIndex={topicIndex!}
+          fieldName={fieldName}
+          itemIndex={itemIndex}
+          onHighlightCreated={onHighlightCreated!}
+          onHighlightDeleted={onHighlightDeleted!}
+        />
+      );
+    }
+    // Fallback: formatBoardText without highlighting
+    return <>{formatBoardText(text)}</>;
+  }
 
   return (
     <div className="space-y-4">
 
       {/* Core Idea — plain italic, left-rule accent, no card */}
       <p className="text-sm italic text-foreground/75 leading-relaxed border-l-2 border-muted-foreground/25 pl-3">
-        {topic.coreIdea}
+        {renderText(topic.coreIdea, "coreIdea", 0)}
       </p>
 
       {/* Two-column body: left = explanatory, right = high-yield */}
@@ -72,9 +106,9 @@ export function BoardExamTopicRenderer({
               <SectionLabel>Key Points</SectionLabel>
               <AcademicBulletList
                 items={topic.keyPoints}
-                renderItem={(pt) => (
+                renderItem={(pt, idx) => (
                   <span className="text-foreground/85">
-                    <SemanticLabel text={pt} />
+                    {renderText(pt, "keyPoints", idx)}
                   </span>
                 )}
               />
@@ -86,8 +120,10 @@ export function BoardExamTopicRenderer({
               <SectionLabel>Quick Breakdown</SectionLabel>
               <AcademicBulletList
                 items={topic.quickBreakdown}
-                renderItem={(b) => (
-                  <span className="text-foreground/65">{formatBoardText(b)}</span>
+                renderItem={(b, idx) => (
+                  <span className="text-foreground/65">
+                    {renderText(b, "quickBreakdown", idx)}
+                  </span>
                 )}
               />
             </div>
@@ -102,9 +138,9 @@ export function BoardExamTopicRenderer({
               <AcademicBulletList
                 items={topic.mustMemorize}
                 ordered
-                renderItem={(fact) => (
+                renderItem={(fact, idx) => (
                   <span className="font-medium text-foreground/90">
-                    <SemanticLabel text={fact} />
+                    {renderText(fact, "mustMemorize", idx)}
                   </span>
                 )}
               />
@@ -133,7 +169,9 @@ export function BoardExamTopicRenderer({
             {topic.quickRecall.map((q, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
                 <span className="font-bold text-cyan-600 dark:text-cyan-400 flex-shrink-0">?</span>
-                <span className="italic text-foreground/70 leading-snug">{q}</span>
+                <span className="italic text-foreground/70 leading-snug">
+                  {renderText(q, "quickRecall", i)}
+                </span>
               </li>
             ))}
           </ul>
@@ -171,7 +209,7 @@ export function BoardExamTopicRenderer({
                 ordered
                 renderItem={(fact) => (
                   <span className="font-semibold text-foreground/90">
-                    <SemanticLabel text={fact} />
+                    {formatBoardText(fact)}
                   </span>
                 )}
               />
