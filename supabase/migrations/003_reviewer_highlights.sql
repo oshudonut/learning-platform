@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS reviewer_highlights (
   id          uuid    DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id     text    NOT NULL,
-  document_id uuid    NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  document_id text    NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   topic_index integer NOT NULL,
   field_name  text    NOT NULL,  -- keyPoints | mustMemorize | quickBreakdown | quickRecall | coreIdea
   item_index  integer NOT NULL DEFAULT 0,
