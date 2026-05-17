@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { DailyChecklist } from "./DailyChecklist";
 import { CalendarView } from "./CalendarView";
 import { PlannerAIChat } from "./PlannerAIChat";
+import { PlannerOptimizer } from "./PlannerOptimizer";
 import { ITEM_TYPE_META } from "./itemTypeMeta";
 import type { StudyPlan, StudyPlanItem, StudyPlanDocument } from "@/lib/types";
 import type { DailyBrief } from "@/lib/planner";
@@ -265,18 +266,21 @@ export function PlanDetail({ planId }: { planId: string }) {
                 </span>
               )}
             </div>
-            <button
-              onClick={() => void handleReschedule()}
-              disabled={rescheduling}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {rescheduling ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3 w-3" />
-              )}
-              Reschedule
-            </button>
+            <div className="flex items-center gap-2">
+              <PlannerOptimizer planId={planId} onApplied={() => void fetchAll()} />
+              <button
+                onClick={() => void handleReschedule()}
+                disabled={rescheduling}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {rescheduling ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3 w-3" />
+                )}
+                Reschedule
+              </button>
+            </div>
           </div>
           <DailyChecklist
             brief={brief}
