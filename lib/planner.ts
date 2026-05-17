@@ -244,6 +244,105 @@ export function buildNextReviewEvent(
   };
 }
 
+// ─── Adaptive Rescheduling Engine ────────────────────────────────────────────
+
+const TYPE_PRIORITY: Record<StudyPlanItem["itemType"], number> = {
+  remediation: 0,
+  quiz: 1,
+  checkpoint: 2,
+  read_sections: 3,
+  retention_review: 4,
+  flashcard_review: 5,
+};
+
+export type RescheduleUpdate = { id: string; scheduledDate: number; position: number };
+
+/**
+ * Redistribute all pending items across remaining available days.
+ * Retention reviews stay anchored to their fixed-delay offsets.
+ * All other items are sorted by type + document priority then packed greedily.
+ */
+export function reschedulePendingItems(
+  pendingItems: StudyPlanItem[],
+  plan: StudyPlan,
+  planDocs: StudyPlanDocument[],
+  now: number,
+): RescheduleUpdate[] {
+  const today = utcMidnight(now);
+  const examDay = utcMidnight(plan.examDate);
+  const maxDailyMins = plan.dailyHours * 60;
+  const docPriority = new Map(planDocs.map((d) => [d.documentId, d.priority]));
+
+  const fixed: StudyPlanItem[] = [];
+  const flexible: StudyPlanItem[] = [];
+
+  for (const item of pendingItems) {
+    if (item.itemType === "retention_review") {
+      fixed.push(item);
+    } else {
+      flexible.push(item);
+    }
+  }
+
+  // Sort flexible items: type priority → document priority → original date
+  flexible.sort((a, b) => {
+    const t = (TYPE_PRIORITY[a.itemType] ?? 9) - (TYPE_PRIORITY[b.itemType] ?? 9);
+    if (t !== 0) return t;
+    const d = (docPriority.get(a.documentId) ?? 999) - (docPriority.get(b.documentId) ?? 999);
+    if (d !== 0) return d;
+    return a.scheduledDate - b.scheduledDate;
+  });
+
+  const budget: Record<number, number> = {};
+  const updates: RescheduleUpdate[] = [];
+
+  function findNextSlot(neededMins: number): number {
+    let day = today;
+    while (day < examDay) {
+      if ((budget[day] ?? 0) + neededMins <= maxDailyMins) return day;
+      day = addDays(day, 1);
+    }
+    return Math.max(today, addDays(examDay, -1));
+  }
+
+  // Anchor retention reviews at their original stage-based offsets
+  for (const item of fixed) {
+    const stage = (item.metadata.retentionStage as number) ?? 1;
+    const delayDays = stage === 1 ? 7 : 21;
+    const date = utcMidnight(addDays(today, delayDays));
+    const position = budget[date] ?? 0;
+    budget[date] = position + item.estimatedMins;
+    updates.push({ id: item.id, scheduledDate: date, position });
+  }
+
+  // Pack flexible items greedily from today
+  for (const item of flexible) {
+    const date = findNextSlot(item.estimatedMins);
+    const position = budget[date] ?? 0;
+    budget[date] = position + item.estimatedMins;
+    updates.push({ id: item.id, scheduledDate: date, position });
+  }
+
+  return updates;
+}
+
+/**
+ * Find the single highest-priority upcoming item that can be pulled to today.
+ * Used when the user finishes early.
+ */
+export function findPullForwardCandidate(
+  pendingItems: StudyPlanItem[],
+  now: number,
+): StudyPlanItem | null {
+  const tomorrow = addDays(utcMidnight(now), 1);
+  const upcoming = pendingItems.filter((i) => i.scheduledDate >= tomorrow);
+  if (upcoming.length === 0) return null;
+  upcoming.sort(
+    (a, b) => (TYPE_PRIORITY[a.itemType] ?? 9) - (TYPE_PRIORITY[b.itemType] ?? 9),
+  );
+  return upcoming[0];
+}
+
 // ─── Daily Study Engine ───────────────────────────────────────────────────────
 
 const BASE_SCORE: Record<StudyPlanItem["itemType"], number> = {

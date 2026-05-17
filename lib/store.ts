@@ -2334,6 +2334,37 @@ export async function getUserPlanItemsInRange(
   return (data ?? []).map((r) => rowToPlanItem(r as Record<string, unknown>));
 }
 
+export async function getPendingPlanItems(planId: string): Promise<StudyPlanItem[]> {
+  const { data, error } = await supabase
+    .from("study_plan_items")
+    .select("*")
+    .eq("plan_id", planId)
+    .is("completed_at", null)
+    .is("skipped_at", null)
+    .order("scheduled_date", { ascending: true })
+    .order("position", { ascending: true });
+  if (error) throw new Error(`getPendingPlanItems: ${error.message}`);
+  return (data ?? []).map((r) => rowToPlanItem(r as Record<string, unknown>));
+}
+
+export async function bulkReschedulePlanItems(
+  updates: Array<{ id: string; planId: string; scheduledDate: number; position: number }>,
+): Promise<void> {
+  if (updates.length === 0) return;
+  const now = Date.now();
+  const results = await Promise.all(
+    updates.map(({ id, planId, scheduledDate, position }) =>
+      supabase
+        .from("study_plan_items")
+        .update({ scheduled_date: scheduledDate, position, updated_at: now })
+        .eq("id", id)
+        .eq("plan_id", planId),
+    ),
+  );
+  const firstError = results.find((r) => r.error)?.error;
+  if (firstError) throw new Error(`bulkReschedulePlanItems: ${firstError.message}`);
+}
+
 export async function getMaxConfusionByDocument(
   userId: string,
   documentIds: string[],
