@@ -10,6 +10,7 @@ type ReviewerNotepadProps = {
   documentId: string;
   topicIndex: number;
   initialNote?: { noteText: string; confusionLevel: number | null } | null;
+  onConfused?: (noteText: string, confusionLevel: number) => void;
 };
 
 const CONFUSION_LABELS: Record<number, string> = {
@@ -28,13 +29,14 @@ const CONFUSION_COLORS: Record<number, string> = {
   5: "text-red-500 border-red-500/40 bg-red-500/8",
 };
 
-export function ReviewerNotepad({ documentId, topicIndex, initialNote }: ReviewerNotepadProps) {
+export function ReviewerNotepad({ documentId, topicIndex, initialNote, onConfused }: ReviewerNotepadProps) {
   const [open, setOpen] = useState(Boolean(initialNote?.noteText));
   const [noteText, setNoteText] = useState(initialNote?.noteText ?? "");
   const [confusionLevel, setConfusionLevel] = useState<number | null>(initialNote?.confusionLevel ?? null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMounted = useRef(true);
+  const confusionTriggeredRef = useRef(false);
 
   useEffect(() => {
     isMounted.current = true;
@@ -57,10 +59,15 @@ export function ReviewerNotepad({ documentId, topicIndex, initialNote }: Reviewe
       if (!res.ok) throw new Error("save failed");
       setSaveState("saved");
       setTimeout(() => { if (isMounted.current) setSaveState("idle"); }, 2000);
+      // Auto-trigger companion when confusion is high (once per topic visit)
+      if (onConfused && level !== null && level >= 3 && !confusionTriggeredRef.current) {
+        confusionTriggeredRef.current = true;
+        onConfused(text, level);
+      }
     } catch {
       if (isMounted.current) setSaveState("error");
     }
-  }, [documentId, topicIndex]);
+  }, [documentId, topicIndex, onConfused]);
 
   const scheduleAutoSave = useCallback((text: string, level: number | null) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);

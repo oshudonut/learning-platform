@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Lightbulb } from "lucide-react";
 import { AcademicBulletList } from "@/components/reviewer/primitives/AcademicBulletList";
 import { BoardTipStrip } from "@/components/reviewer/primitives/BoardTipStrip";
@@ -9,6 +10,8 @@ import { SectionLabel } from "@/components/reviewer/primitives/SectionLabel";
 import { formatBoardText } from "@/components/reviewer/primitives/formatBoardText";
 import { HighlightableText } from "@/components/reviewer/primitives/HighlightableText";
 import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
+import { CompanionPanel, CompanionTriggerButton } from "@/components/reviewer/CompanionPanel";
+import type { CompanionTrigger } from "@/components/reviewer/CompanionPanel";
 import type { ReviewerTopic } from "@/lib/types";
 import type { ReviewerHighlight } from "@/lib/store";
 
@@ -47,6 +50,8 @@ function matchMnemonics(
   });
 }
 
+type CompanionOpen = { trigger: CompanionTrigger; noteText?: string; confusionLevel?: number } | null;
+
 export function BoardExamTopicRenderer({
   topic,
   isLastSection,
@@ -60,6 +65,21 @@ export function BoardExamTopicRenderer({
   onHighlightDeleted,
 }: BoardExamTopicRendererProps) {
   const topicMnemonics = isLastSection ? [] : matchMnemonics(mnemonics, topic);
+  const [companionOpen, setCompanionOpen] = useState<CompanionOpen>(null);
+
+  const companionTopic = {
+    title: topic.title,
+    coreIdea: topic.coreIdea,
+    keyPoints: topic.keyPoints,
+    mustMemorize: topic.mustMemorize,
+    boardTips: topic.boardTips,
+  };
+
+  function handleOpenCompanion(trigger: CompanionTrigger, noteText?: string, confusionLevel?: number) {
+    // If confusion trigger arrives but companion is already open for explicit help, don't override
+    if (companionOpen?.trigger === "explicit_help" && trigger === "confusion") return;
+    setCompanionOpen({ trigger, noteText, confusionLevel });
+  }
 
   // Whether highlighting is active for this renderer
   const canHighlight = documentId !== undefined && topicIndex !== undefined
@@ -232,12 +252,36 @@ export function BoardExamTopicRenderer({
         </>
       )}
 
+      {/* AI Companion — trigger button + inline panel */}
+      {documentId !== undefined && topicIndex !== undefined && (
+        <div>
+          {!companionOpen && (
+            <div className="flex justify-end">
+              <CompanionTriggerButton onClick={() => handleOpenCompanion("explicit_help")} />
+            </div>
+          )}
+          {companionOpen && (
+            <CompanionPanel
+              key={`${topicIndex}-${companionOpen.trigger}-${companionOpen.noteText?.slice(0, 20) ?? ""}`}
+              documentId={documentId}
+              topicIndex={topicIndex}
+              topic={companionTopic}
+              trigger={companionOpen.trigger}
+              noteText={companionOpen.noteText}
+              confusionLevel={companionOpen.confusionLevel}
+              onClose={() => setCompanionOpen(null)}
+            />
+          )}
+        </div>
+      )}
+
       {/* Notes — always rendered last, outside the section summaries */}
       {documentId !== undefined && topicIndex !== undefined && (
         <ReviewerNotepad
           documentId={documentId}
           topicIndex={topicIndex}
           initialNote={note ?? null}
+          onConfused={(noteText, confusionLevel) => handleOpenCompanion("confusion", noteText, confusionLevel)}
         />
       )}
 

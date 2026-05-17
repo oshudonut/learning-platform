@@ -1901,3 +1901,43 @@ export async function deleteHighlight(
     .eq("user_id", userId);
   if (error) throw new Error(`deleteHighlight: ${error.message}`);
 }
+
+// ─── AI Companion Events ──────────────────────────────────────────────────────
+
+export async function insertCompanionEvent(
+  userId: string,
+  documentId: string,
+  topicIndex: number,
+  triggerType: string,
+  tokensInput: number,
+  tokensOutput: number,
+): Promise<void> {
+  try {
+    const { error } = await supabase.from("ai_companion_events").insert({
+      id: randomId(),
+      user_id: userId,
+      document_id: documentId,
+      topic_index: topicIndex,
+      trigger_type: triggerType,
+      tokens_input: tokensInput,
+      tokens_output: tokensOutput,
+      created_at: Date.now(),
+    });
+    if (error) console.error(`insertCompanionEvent: ${error.message}`);
+  } catch (err) {
+    console.error("insertCompanionEvent unexpected error:", err);
+  }
+}
+
+export async function getCompanionCallCount(
+  userId: string,
+  sinceTimestamp: number,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("ai_companion_events")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", sinceTimestamp);
+  if (error) throw new Error(`getCompanionCallCount: ${error.message}`);
+  return count ?? 0;
+}
