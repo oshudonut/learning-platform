@@ -15,6 +15,7 @@ import {
   AlertCircle,
   FolderOpen,
   Search,
+  Download,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,7 @@ export default function CollectionDetailPage() {
   const [libraryDocs, setLibraryDocs] = useState<LibraryDoc[]>([]);
   const [docSearch, setDocSearch] = useState("");
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // Drag state
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -119,6 +121,27 @@ export default function CollectionDetailPage() {
       }
     } finally {
       setAddingId(null);
+    }
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/export?collectionId=${id}`);
+      if (!res.ok) {
+        const data = await res.json() as { error?: string };
+        alert(data.error ?? "Export failed");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${collection?.name ?? "collection"}_reviewer.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -214,13 +237,31 @@ export default function CollectionDetailPage() {
                 )}
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setAddingDoc(true); void fetchLibraryDocs(); }}
-            >
-              <Plus className="h-3.5 w-3.5" />Add Document
-            </Button>
+            <div className="flex items-center gap-2">
+              {items.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleExport()}
+                  disabled={exporting}
+                  title="Export all unlocked documents as a single DOCX"
+                >
+                  {exporting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  Export DOCX
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setAddingDoc(true); void fetchLibraryDocs(); }}
+              >
+                <Plus className="h-3.5 w-3.5" />Add Document
+              </Button>
+            </div>
           </div>
         </div>
 

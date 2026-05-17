@@ -7,20 +7,102 @@ import {
   HeadingLevel,
   AlignmentType,
   BorderStyle,
+  PageBreak,
 } from "docx";
-import { getDocument, getProgression } from "@/lib/store";
+import { getDocument, getProgression, getNotesByDocument, getHighlightsByDocument, listCollectionItems, getCollection } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import type { Reviewer } from "@/lib/types";
+import type { ReviewerNote, ReviewerHighlight } from "@/lib/store";
 
-// Color palette
-const RED   = "C0392B"; // major topic headings
-const BLUE  = "1A5276"; // section label headings
-const GOLD  = "7D6608"; // must-memorize label
-const GRAY  = "555555"; // body labels
+export const runtime = "nodejs";
 
-function bullet(text: string, indent = 0): Paragraph {
+// ── Color palette ─────────────────────────────────────────────────────────────
+
+const RED   = "C0392B";
+const BLUE  = "1A5276";
+const GOLD  = "7D6608";
+const GRAY  = "888888";
+const NOTE_BORDER = "CCCCCC";
+
+// ── Highlight color map (OOXML → our color tags) ──────────────────────────────
+
+function toDocxHighlight(tag: string): "yellow" | "green" | "cyan" | "magenta" {
+  const map: Record<string, "yellow" | "green" | "cyan" | "magenta"> = {
+    yellow: "yellow",
+    green:  "green",
+    blue:   "cyan",
+    pink:   "magenta",
+  };
+  return map[tag] ?? "yellow";
+}
+
+// ── Annotation types ──────────────────────────────────────────────────────────
+
+type Annotations = {
+  notes: Map<number, ReviewerNote>;
+  // key: `${topicIndex}:${fieldName}:${itemIndex}`
+  highlights: Map<string, ReviewerHighlight[]>;
+};
+
+function buildAnnotations(
+  notes: ReviewerNote[],
+  highlights: ReviewerHighlight[],
+): Annotations {
+  const notesMap = new Map<number, ReviewerNote>();
+  for (const n of notes) notesMap.set(n.topicIndex, n);
+
+  const hlMap = new Map<string, ReviewerHighlight[]>();
+  for (const h of highlights.filter((h) => !h.isStale)) {
+    const key = `${h.topicIndex}:${h.fieldName}:${h.itemIndex}`;
+    const arr = hlMap.get(key) ?? [];
+    arr.push(h);
+    hlMap.set(key, arr);
+  }
+  return { notes: notesMap, highlights: hlMap };
+}
+
+function fieldHighlights(
+  ann: Annotations | undefined,
+  topicIndex: number,
+  fieldName: string,
+  itemIndex: number,
+): ReviewerHighlight[] {
+  return ann?.highlights.get(`${topicIndex}:${fieldName}:${itemIndex}`) ?? [];
+}
+
+// ── Text run builder with highlight spans ─────────────────────────────────────
+
+function highlightedRuns(text: string, highlights: ReviewerHighlight[]): TextRun[] {
+  if (!highlights.length) return [new TextRun({ text, size: 20 })];
+
+  const sorted = [...highlights].sort((a, b) => a.charStart - b.charStart);
+  const runs: TextRun[] = [];
+  let pos = 0;
+
+  for (const h of sorted) {
+    const s = Math.max(pos, Math.max(0, h.charStart));
+    const e = Math.min(text.length, h.charEnd);
+    if (e <= s) continue;
+    if (s > pos) runs.push(new TextRun({ text: text.slice(pos, s), size: 20 }));
+    runs.push(
+      new TextRun({
+        text: text.slice(s, e),
+        size: 20,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        highlight: toDocxHighlight(h.colorTag) as any,
+      }),
+    );
+    pos = e;
+  }
+  if (pos < text.length) runs.push(new TextRun({ text: text.slice(pos), size: 20 }));
+  return runs.length ? runs : [new TextRun({ text, size: 20 })];
+}
+
+// ── Paragraph builders ────────────────────────────────────────────────────────
+
+function bullet(text: string, indent = 0, highlights?: ReviewerHighlight[]): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: 20 })],
+    children: highlights?.length ? highlightedRuns(text, highlights) : [new TextRun({ text, size: 20 })],
     bullet: { level: indent },
     spacing: { after: 80 },
   });
@@ -30,7 +112,8 @@ function mustMemorizeBullet(text: string): Paragraph {
   return new Paragraph({
     children: [
       new TextRun({ text: "★  ", bold: true, color: GOLD, size: 20 }),
-      new TextRun({ text, bold: true, size: 20, highlight: "yellow" }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      new TextRun({ text, bold: true, size: 20, highlight: "yellow" as any }),
     ],
     bullet: { level: 0 },
     spacing: { after: 80 },
@@ -54,15 +137,51 @@ function label(text: string, color = BLUE): Paragraph {
   });
 }
 
-function body(text: string): Paragraph {
+function body(text: string, highlights?: ReviewerHighlight[]): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: 20 })],
+    children: highlights?.length ? highlightedRuns(text, highlights) : [new TextRun({ text, size: 20 })],
     spacing: { after: 100 },
   });
 }
 
-function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
+function noteBlock(note: ReviewerNote): Paragraph[] {
+  const paras: Paragraph[] = [
+    new Paragraph({
+      children: [
+        new TextRun({ text: "✎  My Notes", bold: true, color: GRAY, size: 18 }),
+        ...(note.confusionLevel
+          ? [new TextRun({ text: `  ·  Confusion: ${"★".repeat(note.confusionLevel)}`, color: GRAY, size: 16 })]
+          : []),
+      ],
+      spacing: { before: 200, after: 60 },
+      border: { top: { style: BorderStyle.SINGLE, size: 4, color: NOTE_BORDER } },
+    }),
+  ];
+  if (note.noteText.trim()) {
+    paras.push(
+      new Paragraph({
+        children: [new TextRun({ text: note.noteText, italics: true, color: GRAY, size: 20 })],
+        spacing: { after: 160 },
+        indent: { left: 360 },
+      }),
+    );
+  }
+  return paras;
+}
+
+// ── DOCX builder ──────────────────────────────────────────────────────────────
+
+function buildDocx(
+  doc: { title: string },
+  reviewer: Reviewer,
+  annotations?: Annotations,
+  leadingPageBreak = false,
+): Paragraph[] {
   const children: Paragraph[] = [];
+
+  if (leadingPageBreak) {
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+  }
 
   // Cover
   children.push(
@@ -73,14 +192,7 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
       spacing: { after: 200 },
     }),
     new Paragraph({
-      children: [
-        new TextRun({
-          text: `Source: ${doc.title}`,
-          italics: true,
-          color: "777777",
-          size: 20,
-        }),
-      ],
+      children: [new TextRun({ text: `Source: ${doc.title}`, italics: true, color: "777777", size: 20 })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 400 },
     }),
@@ -91,20 +203,25 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
   );
 
   // Topics
-  for (const topic of reviewer.topics) {
+  for (let i = 0; i < reviewer.topics.length; i++) {
+    const topic = reviewer.topics[i];
     children.push(heading2(topic.title));
 
     children.push(label("Core Idea"));
-    children.push(body(topic.coreIdea));
+    children.push(body(topic.coreIdea, fieldHighlights(annotations, i, "coreIdea", 0)));
 
     if (topic.keyPoints.length > 0) {
       children.push(label("Key Points"));
-      for (const kp of topic.keyPoints) children.push(bullet(kp));
+      for (let j = 0; j < topic.keyPoints.length; j++) {
+        children.push(bullet(topic.keyPoints[j], 0, fieldHighlights(annotations, i, "keyPoints", j)));
+      }
     }
 
     if (topic.quickBreakdown.length > 0) {
       children.push(label("Quick Breakdown"));
-      for (const qb of topic.quickBreakdown) children.push(bullet(qb));
+      for (let j = 0; j < topic.quickBreakdown.length; j++) {
+        children.push(bullet(topic.quickBreakdown[j], 0, fieldHighlights(annotations, i, "quickBreakdown", j)));
+      }
     }
 
     if (topic.mustMemorize.length > 0) {
@@ -121,12 +238,22 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
 
     if (topic.boardTips.length > 0) {
       children.push(label("Board Tips"));
-      for (const bt of topic.boardTips) children.push(bullet(bt));
+      for (let j = 0; j < topic.boardTips.length; j++) {
+        children.push(bullet(topic.boardTips[j], 0, fieldHighlights(annotations, i, "boardTips", j)));
+      }
     }
 
     if (topic.quickRecall.length > 0) {
       children.push(label("Quick Recall"));
-      for (const qr of topic.quickRecall) children.push(bullet(qr));
+      for (let j = 0; j < topic.quickRecall.length; j++) {
+        children.push(bullet(topic.quickRecall[j], 0, fieldHighlights(annotations, i, "quickRecall", j)));
+      }
+    }
+
+    // Notes for this topic
+    const note = annotations?.notes.get(i);
+    if (note?.noteText.trim() || note?.confusionLevel) {
+      children.push(...noteBlock(note!));
     }
   }
 
@@ -165,12 +292,10 @@ function buildDocx(doc: { title: string }, reviewer: Reviewer): Document {
     }
   }
 
-  return new Document({
-    title: reviewer.title,
-    description: `AI Reviewer — ${doc.title}`,
-    sections: [{ children }],
-  });
+  return children;
 }
+
+// ── Single-document export (GET /api/export?id=X) ────────────────────────────
 
 export async function GET(req: NextRequest) {
   try {
@@ -179,6 +304,64 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const id = req.nextUrl.searchParams.get("id");
+    const collectionId = req.nextUrl.searchParams.get("collectionId");
+
+    // ── Collection export ───────────────────────────────────────────────────
+    if (collectionId) {
+      const col = await getCollection(collectionId, user.id);
+      if (!col) return NextResponse.json({ error: "Collection not found" }, { status: 404 });
+
+      const items = await listCollectionItems(collectionId, user.id);
+      if (!items.length) return NextResponse.json({ error: "Collection is empty" }, { status: 400 });
+
+      const allParagraphs: Paragraph[] = [];
+      let included = 0;
+
+      for (const item of items) {
+        const doc = await getDocument(item.documentId, user.id);
+        if (!doc?.reviewer) continue;
+
+        const progression = await getProgression(item.documentId, user.id);
+        if (!progression?.quizUnlocked) continue;
+
+        const reviewer = doc.reviewer as Reviewer;
+        if (!reviewer.topics || !reviewer.summary || !reviewer.globalMustMemorize) continue;
+
+        const [notes, highlights] = await Promise.all([
+          getNotesByDocument(item.documentId, user.id),
+          getHighlightsByDocument(item.documentId, user.id),
+        ]);
+        const annotations = buildAnnotations(notes, highlights);
+
+        const paragraphs = buildDocx(doc, reviewer, annotations, included > 0);
+        allParagraphs.push(...paragraphs);
+        included++;
+      }
+
+      if (included === 0) {
+        return NextResponse.json(
+          { error: "No unlocked documents found in this collection. Complete the quiz for each document to unlock export." },
+          { status: 403 },
+        );
+      }
+
+      const docx = new Document({
+        title: col.name,
+        description: `Collection Reviewer — ${col.name}`,
+        sections: [{ children: allParagraphs }],
+      });
+      const buffer = await Packer.toBuffer(docx);
+      const filename = `${col.name.replace(/[^a-z0-9]/gi, "_").slice(0, 60)}_collection.docx`;
+
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    }
+
+    // ── Single document export ───────────────────────────────────────────────
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
     const doc = await getDocument(id, user.id);
@@ -201,9 +384,19 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const docx = buildDocx(doc, reviewer);
-    const buffer = await Packer.toBuffer(docx);
+    const [notes, highlights] = await Promise.all([
+      getNotesByDocument(id, user.id),
+      getHighlightsByDocument(id, user.id),
+    ]);
+    const annotations = buildAnnotations(notes, highlights);
 
+    const paragraphs = buildDocx(doc, reviewer, annotations);
+    const docxDoc = new Document({
+      title: reviewer.title,
+      description: `AI Reviewer — ${doc.title}`,
+      sections: [{ children: paragraphs }],
+    });
+    const buffer = await Packer.toBuffer(docxDoc);
     const filename = `${doc.title.replace(/[^a-z0-9]/gi, "_").slice(0, 60)}_reviewer.docx`;
 
     return new NextResponse(new Uint8Array(buffer), {

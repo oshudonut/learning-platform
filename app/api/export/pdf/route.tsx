@@ -8,8 +8,9 @@ import {
   View,
   StyleSheet,
 } from "@react-pdf/renderer";
-import { getDocument, getProgression } from "@/lib/store";
+import { getDocument, getProgression, getNotesByDocument, getHighlightsByDocument } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import type { ReviewerNote, ReviewerHighlight } from "@/lib/store";
 import type {
   AnyReviewer,
   Reviewer,
@@ -171,6 +172,27 @@ const s = StyleSheet.create({
   },
   goldLabel: { fontFamily: "Helvetica-Bold", fontSize: 8, color: C.gold, letterSpacing: 1, marginBottom: 3 },
   pageNumber: { position: "absolute", bottom: 24, right: 48, fontSize: 8, color: C.muted },
+  noteBox: {
+    borderTopWidth: 1,
+    borderTopColor: "#DDDDDD",
+    paddingTop: 6,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  noteLabel: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8,
+    color: "#999999",
+    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  noteText: {
+    fontSize: 9,
+    color: "#777777",
+    fontFamily: "Helvetica-Oblique",
+    lineHeight: 1.4,
+    marginLeft: 8,
+  },
   globalHeading: {
     fontFamily: "Helvetica-Bold",
     fontSize: 14,
@@ -215,6 +237,49 @@ function NumberedList({ items }: { items: string[] }) {
   );
 }
 
+function AnnotatedBulletText({ text, highlights }: { text: string; highlights: ReviewerHighlight[] }) {
+  if (!highlights.length) return <Text style={s.bullet}>{text}</Text>;
+
+  const sorted = [...highlights].filter((h) => !h.isStale).sort((a, b) => a.charStart - b.charStart);
+  const parts: { t: string; hl: boolean }[] = [];
+  let pos = 0;
+
+  for (const h of sorted) {
+    const start = Math.max(pos, h.charStart);
+    const end = Math.min(text.length, h.charEnd);
+    if (end <= start) continue;
+    if (start > pos) parts.push({ t: text.slice(pos, start), hl: false });
+    parts.push({ t: text.slice(start, end), hl: true });
+    pos = end;
+  }
+  if (pos < text.length) parts.push({ t: text.slice(pos), hl: false });
+
+  return (
+    <Text style={s.bullet}>
+      {parts.map((p, i) =>
+        p.hl ? (
+          <Text key={i} style={{ textDecoration: "underline", fontFamily: "Helvetica-Bold" }}>{p.t}</Text>
+        ) : (
+          p.t
+        ),
+      )}
+    </Text>
+  );
+}
+
+function NoteBox({ note }: { note: ReviewerNote }) {
+  if (!note.noteText.trim() && !note.confusionLevel) return null;
+  const label = note.confusionLevel
+    ? `✎ MY NOTES  ·  CONFUSION: ${"★".repeat(note.confusionLevel)}`
+    : "✎ MY NOTES";
+  return (
+    <View style={s.noteBox}>
+      <Text style={s.noteLabel}>{label}</Text>
+      {note.noteText.trim() ? <Text style={s.noteText}>{note.noteText}</Text> : null}
+    </View>
+  );
+}
+
 function TopicHeading({ index, title }: { index: number; title: string }) {
   return (
     <Text style={s.topicHeader}>
@@ -248,7 +313,21 @@ function Cover({ title, methodLabel, summary }: { title: string; methodLabel: st
 
 // ─── Standard reviewer (board-exam) ──────────────────────────────────────────
 
-function StandardPDF({ reviewer }: { reviewer: Reviewer }) {
+type PdfAnnotations = {
+  notes: Map<number, ReviewerNote>;
+  highlights: Map<string, ReviewerHighlight[]>; // key: `${topicIndex}:${fieldName}:${itemIndex}`
+};
+
+function pdfFieldHighlights(
+  ann: PdfAnnotations | undefined,
+  topicIndex: number,
+  fieldName: string,
+  itemIndex: number,
+): ReviewerHighlight[] {
+  return ann?.highlights.get(`${topicIndex}:${fieldName}:${itemIndex}`) ?? [];
+}
+
+function StandardPDF({ reviewer, annotations }: { reviewer: Reviewer; annotations?: PdfAnnotations }) {
   return (
     <>
       <Cover title={reviewer.title} methodLabel="Board-Exam Reviewer" summary={reviewer.summary} />
@@ -256,13 +335,29 @@ function StandardPDF({ reviewer }: { reviewer: Reviewer }) {
       {reviewer.topics.map((topic, i) => (
         <View key={i} wrap={false}>
           <TopicHeading index={i} title={topic.title} />
-          <Text style={s.body}>{topic.coreIdea}</Text>
+          <AnnotatedBulletText text={topic.coreIdea} highlights={pdfFieldHighlights(annotations, i, "coreIdea", 0)} />
 
           {topic.keyPoints.length > 0 && (
-            <><SectionLabel>Key Points</SectionLabel><BulletList items={topic.keyPoints} /></>
+            <>
+              <SectionLabel>Key Points</SectionLabel>
+              {topic.keyPoints.map((kp, j) => (
+                <View key={j} style={s.bulletRow}>
+                  <Text style={s.dot}>•</Text>
+                  <AnnotatedBulletText text={kp} highlights={pdfFieldHighlights(annotations, i, "keyPoints", j)} />
+                </View>
+              ))}
+            </>
           )}
           {topic.quickBreakdown.length > 0 && (
-            <><SectionLabel>Quick Breakdown</SectionLabel><BulletList items={topic.quickBreakdown} /></>
+            <>
+              <SectionLabel>Quick Breakdown</SectionLabel>
+              {topic.quickBreakdown.map((qb, j) => (
+                <View key={j} style={s.bulletRow}>
+                  <Text style={s.dot}>•</Text>
+                  <AnnotatedBulletText text={qb} highlights={pdfFieldHighlights(annotations, i, "quickBreakdown", j)} />
+                </View>
+              ))}
+            </>
           )}
           {topic.mustMemorize.length > 0 && (
             <><SectionLabel color={C.gold}>Must Memorize</SectionLabel>
@@ -282,11 +377,30 @@ function StandardPDF({ reviewer }: { reviewer: Reviewer }) {
             ))}</>
           )}
           {topic.boardTips.length > 0 && (
-            <><SectionLabel color={C.blue}>Board Tips</SectionLabel><BulletList items={topic.boardTips} /></>
+            <>
+              <SectionLabel color={C.blue}>Board Tips</SectionLabel>
+              {topic.boardTips.map((bt, j) => (
+                <View key={j} style={s.bulletRow}>
+                  <Text style={s.dot}>•</Text>
+                  <AnnotatedBulletText text={bt} highlights={pdfFieldHighlights(annotations, i, "boardTips", j)} />
+                </View>
+              ))}
+            </>
           )}
           {topic.quickRecall.length > 0 && (
-            <><SectionLabel color={C.green}>Quick Recall</SectionLabel><BulletList items={topic.quickRecall} color={C.green} /></>
+            <>
+              <SectionLabel color={C.green}>Quick Recall</SectionLabel>
+              {topic.quickRecall.map((qr, j) => (
+                <View key={j} style={s.bulletRow}>
+                  <Text style={[s.dot, { color: C.green }]}>•</Text>
+                  <AnnotatedBulletText text={qr} highlights={pdfFieldHighlights(annotations, i, "quickRecall", j)} />
+                </View>
+              ))}
+            </>
           )}
+
+          {/* Topic note */}
+          {annotations?.notes.get(i) && <NoteBox note={annotations.notes.get(i)!} />}
         </View>
       ))}
 
@@ -559,7 +673,7 @@ function RelationalPDF({ reviewer }: { reviewer: RelationalReviewer }) {
 
 // ─── Root PDF document ────────────────────────────────────────────────────────
 
-function ReviewerPDF({ reviewer }: { reviewer: AnyReviewer }) {
+function ReviewerPDF({ reviewer, annotations }: { reviewer: AnyReviewer; annotations?: PdfAnnotations }) {
   return (
     <Document>
       <Page size="A4" style={s.page}>
@@ -573,7 +687,7 @@ function ReviewerPDF({ reviewer }: { reviewer: AnyReviewer }) {
         ) : "type" in reviewer && reviewer.type === "relational" ? (
           <RelationalPDF reviewer={reviewer as RelationalReviewer} />
         ) : (
-          <StandardPDF reviewer={reviewer as Reviewer} />
+          <StandardPDF reviewer={reviewer as Reviewer} annotations={annotations} />
         )}
       </Page>
     </Document>
@@ -581,6 +695,20 @@ function ReviewerPDF({ reviewer }: { reviewer: AnyReviewer }) {
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
+
+function buildPdfAnnotations(notes: ReviewerNote[], highlights: ReviewerHighlight[]): PdfAnnotations {
+  const notesMap = new Map<number, ReviewerNote>();
+  for (const n of notes) notesMap.set(n.topicIndex, n);
+
+  const hlMap = new Map<string, ReviewerHighlight[]>();
+  for (const h of highlights.filter((h) => !h.isStale)) {
+    const key = `${h.topicIndex}:${h.fieldName}:${h.itemIndex}`;
+    const arr = hlMap.get(key) ?? [];
+    arr.push(h);
+    hlMap.set(key, arr);
+  }
+  return { notes: notesMap, highlights: hlMap };
+}
 
 export async function GET(req: NextRequest) {
   const supabase = createSupabaseServer();
@@ -605,8 +733,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "No reviewer generated yet." }, { status: 404 });
   }
 
-  const buffer = await renderToBuffer(<ReviewerPDF reviewer={doc.reviewer} />);
+  // Fetch notes + highlights (non-blocking — fall back to no annotations on error)
+  let annotations: PdfAnnotations | undefined;
+  try {
+    const [notes, highlights] = await Promise.all([
+      getNotesByDocument(id, user.id),
+      getHighlightsByDocument(id, user.id),
+    ]);
+    if (notes.length || highlights.length) {
+      annotations = buildPdfAnnotations(notes, highlights);
+    }
+  } catch {
+    // Annotations are non-critical — export still works without them
+  }
 
+  const buffer = await renderToBuffer(<ReviewerPDF reviewer={doc.reviewer} annotations={annotations} />);
   const filename = `${doc.title.replace(/[^a-z0-9]/gi, "_").slice(0, 60)}_reviewer.pdf`;
 
   return new NextResponse(new Uint8Array(buffer), {
