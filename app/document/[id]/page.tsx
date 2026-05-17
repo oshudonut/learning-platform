@@ -118,6 +118,7 @@ function DocumentPageInner() {
   const [flashcards, setFlashcards] = useState<LoadState<Flashcard[]>>({ status: "idle" });
   const [progression, setProgression] = useState<DocumentProgression | null>(null);
   const [remediationActive, setRemediationActive] = useState(false);
+  const [notes, setNotes] = useState<Map<number, { noteText: string; confusionLevel: number | null }>>(new Map());
   // reviewerKey increments on freshProgression — forces ReviewerView remount to clear stale localIdx
   const [reviewerKey, setReviewerKey] = useState(0);
   // stored so the "Try Again" error-retry button can pass method/mode to the reviewer API
@@ -146,6 +147,20 @@ function DocumentPageInner() {
         if (data.progression) {
           setProgression(data.progression);
           setRemediationActive(data.progression.remediationActive);
+        }
+      })
+      .catch(() => null);
+
+    // Load notes (non-blocking — failure is silently ignored)
+    fetch(`/api/notes?documentId=${id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.notes)) {
+          const map = new Map<number, { noteText: string; confusionLevel: number | null }>();
+          for (const n of data.notes) {
+            map.set(n.topicIndex as number, { noteText: n.noteText as string, confusionLevel: (n.confusionLevel as number | null) ?? null });
+          }
+          setNotes(map);
         }
       })
       .catch(() => null);
@@ -463,6 +478,7 @@ function DocumentPageInner() {
                         documentId={id}
                         learningMethod={progression?.learningMethod}
                         studyMode={progression?.studyMode}
+                        notes={notes}
                         onSectionComplete={handleSectionComplete}
                         onStartFlashcards={handleStartFlashcards}
                       />

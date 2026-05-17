@@ -19,6 +19,7 @@ import {
   User,
   Swords,
   X,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -27,6 +28,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 const nav = [
   { href: "/", icon: Sparkles, label: "Home", exact: true },
   { href: "/library", icon: Library, label: "Library" },
+  { href: "/collections", icon: FolderOpen, label: "Collections" },
   { href: "/tutor", icon: MessageSquare, label: "AI Tutor" },
   { href: "/flashcards", icon: Layers, label: "Flashcards" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },

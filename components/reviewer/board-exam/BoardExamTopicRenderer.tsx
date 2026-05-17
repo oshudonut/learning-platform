@@ -8,6 +8,7 @@ import { MnemonicCard } from "@/components/reviewer/primitives/MnemonicCard";
 import { SectionLabel } from "@/components/reviewer/primitives/SectionLabel";
 import { SemanticLabel } from "@/components/reviewer/primitives/SemanticLabel";
 import { formatBoardText } from "@/components/reviewer/primitives/formatBoardText";
+import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
 import type { ReviewerTopic } from "@/lib/types";
 
 interface BoardExamTopicRendererProps {
@@ -15,6 +16,9 @@ interface BoardExamTopicRendererProps {
   isLastSection: boolean;
   globalMustMemorize: string[];
   mnemonics: { concept: string; aid: string }[];
+  documentId?: string;
+  topicIndex?: number;
+  note?: { noteText: string; confusionLevel: number | null } | null;
 }
 
 const STOP_WORDS = new Set([
@@ -44,6 +48,9 @@ export function BoardExamTopicRenderer({
   isLastSection,
   globalMustMemorize,
   mnemonics,
+  documentId,
+  topicIndex,
+  note,
 }: BoardExamTopicRendererProps) {
   const topicMnemonics = isLastSection ? [] : matchMnemonics(mnemonics, topic);
 
@@ -185,6 +192,15 @@ export function BoardExamTopicRenderer({
             </div>
           )}
         </>
+      )}
+
+      {/* Notes — always rendered last, outside the section summaries */}
+      {documentId !== undefined && topicIndex !== undefined && (
+        <ReviewerNotepad
+          documentId={documentId}
+          topicIndex={topicIndex}
+          initialNote={note ?? null}
+        />
       )}
 
     </div>

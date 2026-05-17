@@ -1491,3 +1491,312 @@ export async function renameDocument(docId: string, userId: string, title: strin
     .eq("user_id", userId);
   if (error) throw new Error(`renameDocument: ${error.message}`);
 }
+
+// ─── Study Collections ────────────────────────────────────────────────────────
+
+export type StudyCollection = {
+  id: string;
+  userId: string;
+  name: string;
+  description: string | null;
+  color: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type CollectionItem = {
+  id: string;
+  collectionId: string;
+  documentId: string;
+  position: number;
+  addedAt: number;
+};
+
+function rowToCollection(row: Record<string, unknown>): StudyCollection {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    name: row.name as string,
+    description: (row.description as string | null) ?? null,
+    color: (row.color as string) ?? "blue",
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
+  };
+}
+
+function rowToCollectionItem(row: Record<string, unknown>): CollectionItem {
+  return {
+    id: row.id as string,
+    collectionId: row.collection_id as string,
+    documentId: row.document_id as string,
+    position: row.position as number,
+    addedAt: row.added_at as number,
+  };
+}
+
+export async function createCollection(
+  userId: string,
+  name: string,
+  description: string | null,
+  color: string,
+): Promise<StudyCollection> {
+  const now = Date.now();
+  const { data, error } = await supabase
+    .from("study_collections")
+    .insert({
+      id: randomId(),
+      user_id: userId,
+      name,
+      description,
+      color,
+      created_at: now,
+      updated_at: now,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`createCollection: ${error.message}`);
+  return rowToCollection(data as Record<string, unknown>);
+}
+
+export async function listCollections(userId: string): Promise<StudyCollection[]> {
+  const { data, error } = await supabase
+    .from("study_collections")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`listCollections: ${error.message}`);
+  return (data ?? []).map((r) => rowToCollection(r as Record<string, unknown>));
+}
+
+export async function getCollection(
+  id: string,
+  userId: string,
+): Promise<StudyCollection | null> {
+  const { data, error } = await supabase
+    .from("study_collections")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`getCollection: ${error.message}`);
+  if (!data) return null;
+  return rowToCollection(data as Record<string, unknown>);
+}
+
+export async function updateCollection(
+  id: string,
+  userId: string,
+  patch: { name?: string; description?: string | null; color?: string },
+): Promise<StudyCollection> {
+  const update: Record<string, unknown> = { updated_at: Date.now() };
+  if (patch.name !== undefined) update.name = patch.name;
+  if (patch.description !== undefined) update.description = patch.description;
+  if (patch.color !== undefined) update.color = patch.color;
+  const { data, error } = await supabase
+    .from("study_collections")
+    .update(update)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateCollection: ${error.message}`);
+  return rowToCollection(data as Record<string, unknown>);
+}
+
+export async function deleteCollection(id: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("study_collections")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw new Error(`deleteCollection: ${error.message}`);
+}
+
+export async function listCollectionItems(
+  collectionId: string,
+  userId: string,
+): Promise<CollectionItem[]> {
+  // Verify ownership first — avoids leaking items from other users' collections
+  const collection = await getCollection(collectionId, userId);
+  if (!collection) return [];
+  const { data, error } = await supabase
+    .from("collection_items")
+    .select("*")
+    .eq("collection_id", collectionId)
+    .order("position", { ascending: true });
+  if (error) throw new Error(`listCollectionItems: ${error.message}`);
+  return (data ?? []).map((r) => rowToCollectionItem(r as Record<string, unknown>));
+}
+
+export async function addDocumentToCollection(
+  collectionId: string,
+  documentId: string,
+  userId: string,
+): Promise<CollectionItem> {
+  const collection = await getCollection(collectionId, userId);
+  if (!collection) throw new Error("Collection not found or access denied");
+
+  const { data: maxRow } = await supabase
+    .from("collection_items")
+    .select("position")
+    .eq("collection_id", collectionId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const maxPosition = (maxRow?.position as number | null) ?? 0;
+  const position = maxPosition + 1.0;
+
+  const { data, error } = await supabase
+    .from("collection_items")
+    .insert({
+      id: randomId(),
+      collection_id: collectionId,
+      document_id: documentId,
+      position,
+      added_at: Date.now(),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`addDocumentToCollection: ${error.message}`);
+  return rowToCollectionItem(data as Record<string, unknown>);
+}
+
+export async function removeDocumentFromCollection(
+  collectionId: string,
+  documentId: string,
+  userId: string,
+): Promise<void> {
+  const collection = await getCollection(collectionId, userId);
+  if (!collection) throw new Error("Collection not found or access denied");
+  const { error } = await supabase
+    .from("collection_items")
+    .delete()
+    .eq("collection_id", collectionId)
+    .eq("document_id", documentId);
+  if (error) throw new Error(`removeDocumentFromCollection: ${error.message}`);
+}
+
+export async function reorderCollectionItem(
+  itemId: string,
+  collectionId: string,
+  userId: string,
+  newPosition: number,
+): Promise<void> {
+  const collection = await getCollection(collectionId, userId);
+  if (!collection) throw new Error("Collection not found or access denied");
+  const { error } = await supabase
+    .from("collection_items")
+    .update({ position: newPosition })
+    .eq("id", itemId)
+    .eq("collection_id", collectionId);
+  if (error) throw new Error(`reorderCollectionItem: ${error.message}`);
+}
+
+// ─── Reviewer Notes ───────────────────────────────────────────────────────────
+
+export type ReviewerNote = {
+  id: string;
+  userId: string;
+  documentId: string;
+  topicIndex: number;
+  noteText: string;
+  aiTags: string[] | null;
+  confusionLevel: number | null;
+  linkedConcepts: string[] | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+function rowToReviewerNote(row: Record<string, unknown>): ReviewerNote {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    documentId: row.document_id as string,
+    topicIndex: row.topic_index as number,
+    noteText: (row.note_text as string) ?? "",
+    aiTags: (row.ai_tags as string[] | null) ?? null,
+    confusionLevel: (row.confusion_level as number | null) ?? null,
+    linkedConcepts: (row.linked_concepts as string[] | null) ?? null,
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
+  };
+}
+
+export async function upsertNote(
+  userId: string,
+  documentId: string,
+  topicIndex: number,
+  noteText: string,
+  confusionLevel?: number,
+): Promise<ReviewerNote> {
+  const now = Date.now();
+  const { data, error } = await supabase
+    .from("reviewer_notes")
+    .upsert(
+      {
+        id: randomId(),
+        user_id: userId,
+        document_id: documentId,
+        topic_index: topicIndex,
+        note_text: noteText,
+        confusion_level: confusionLevel ?? null,
+        created_at: now,
+        updated_at: now,
+      },
+      { onConflict: "user_id,document_id,topic_index" },
+    )
+    .select()
+    .single();
+  if (error) throw new Error(`upsertNote: ${error.message}`);
+  return rowToReviewerNote(data as Record<string, unknown>);
+}
+
+export async function getNotesByDocument(
+  userId: string,
+  documentId: string,
+): Promise<ReviewerNote[]> {
+  const { data, error } = await supabase
+    .from("reviewer_notes")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("document_id", documentId);
+  if (error) throw new Error(`getNotesByDocument: ${error.message}`);
+  return (data ?? []).map((r) => rowToReviewerNote(r as Record<string, unknown>));
+}
+
+export async function deleteNote(
+  userId: string,
+  documentId: string,
+  topicIndex: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from("reviewer_notes")
+    .delete()
+    .eq("user_id", userId)
+    .eq("document_id", documentId)
+    .eq("topic_index", topicIndex);
+  if (error) throw new Error(`deleteNote: ${error.message}`);
+}
+
+// ─── Learning Analytics ───────────────────────────────────────────────────────
+
+export async function insertLearningEvent(
+  userId: string,
+  documentId: string | null,
+  eventType: string,
+  eventData: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const { error } = await supabase.from("learning_analytics").insert({
+      user_id: userId,
+      document_id: documentId,
+      event_type: eventType,
+      event_data: eventData,
+      recorded_at: Date.now(),
+    });
+    if (error) console.error(`insertLearningEvent: ${error.message}`);
+  } catch (err) {
+    console.error("insertLearningEvent unexpected error:", err);
+  }
+}

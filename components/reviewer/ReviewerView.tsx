@@ -341,11 +341,15 @@ function ReviewerCompleteScreen({
   );
 }
 
+type NoteData = { noteText: string; confusionLevel: number | null };
+
 export function ReviewerView({
   reviewer,
   progression,
+  documentId,
   learningMethod,
   studyMode,
+  notes,
   onSectionComplete,
   onStartFlashcards,
 }: {
@@ -354,6 +358,7 @@ export function ReviewerView({
   documentId?: string;
   learningMethod?: LearningMethod | null;
   studyMode?: StudyMode | null;
+  notes?: Map<number, NoteData>;
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
 }) {
@@ -488,6 +493,9 @@ export function ReviewerView({
             isLastSection={currentIdx === total - 1}
             globalMustMemorize={standardReviewer.globalMustMemorize}
             mnemonics={standardReviewer.mnemonics}
+            documentId={documentId}
+            topicIndex={currentIdx}
+            note={notes?.get(currentIdx) ?? null}
           />
 
           {/* Mark complete CTA */}
