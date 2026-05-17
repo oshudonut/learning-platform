@@ -20,6 +20,7 @@ import {
   Swords,
   X,
   FolderOpen,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -32,6 +33,7 @@ const nav = [
   { href: "/tutor", icon: MessageSquare, label: "AI Tutor" },
   { href: "/flashcards", icon: Layers, label: "Flashcards" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
+  { href: "/planner", icon: CalendarDays, label: "Planner" },
   { href: "/compete", icon: Swords, label: "Compete" },
 ];
 

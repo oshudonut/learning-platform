@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode } from "@/lib/types";
 import type { ReviewerHighlight } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { PlannerStatusBanner } from "@/components/planner/PlannerStatusBanner";
 
 type Tab = "review" | "quiz" | "flashcards" | "tutor";
 
@@ -408,6 +409,11 @@ function DocumentPageInner() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Planner status */}
+          <div className="mb-4">
+            <PlannerStatusBanner documentId={id} />
           </div>
 
           {/* Tabs — horizontally scrollable on mobile */}
