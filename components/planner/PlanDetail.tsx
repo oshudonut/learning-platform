@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { DailyChecklist } from "./DailyChecklist";
 import { CalendarView } from "./CalendarView";
+import { PlannerAIChat } from "./PlannerAIChat";
 import { ITEM_TYPE_META } from "./itemTypeMeta";
 import type { StudyPlan, StudyPlanItem, StudyPlanDocument } from "@/lib/types";
 import type { DailyBrief } from "@/lib/planner";
@@ -176,8 +177,12 @@ export function PlanDetail({ planId }: { planId: string }) {
               </div>
             </div>
 
-            {/* Actions menu */}
-            <div className="relative flex-shrink-0">
+            {/* Actions */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <PlannerAIChat planId={planId} />
+
+              {/* More options */}
+              <div className="relative">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
@@ -224,6 +229,7 @@ export function PlanDetail({ planId }: { planId: string }) {
                   </button>
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>

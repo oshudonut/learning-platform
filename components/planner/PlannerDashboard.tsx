@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CreatePlanForm } from "./CreatePlanForm";
+import { PlannerAIChatFAB } from "./PlannerAIChat";
 import type { StudyPlan } from "@/lib/types";
 
 const STATUS_META: Record<StudyPlan["status"], { label: string; icon: React.ElementType; color: string }> = {
@@ -194,6 +195,9 @@ export function PlannerDashboard() {
           </button>
         </motion.div>
       )}
+
+      {/* AI FAB — shown for first active plan */}
+      {active.length > 0 && <PlannerAIChatFAB planId={active[0].id} />}
     </div>
   );
 }
