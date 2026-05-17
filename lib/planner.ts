@@ -1,5 +1,5 @@
 import { randomId } from "./utils";
-import type { StudyPlan, StudyPlanDocument, StudyPlanItem, ReviewScheduleEvent, ReviewEventType } from "./types";
+import type { StudyPlan, StudyPlanDocument, StudyPlanItem, ReviewScheduleEvent, ReviewEventType, QuizAttempt } from "./types";
 import type { DocumentProgression } from "./types";
 import type { DocSummary } from "./store";
 
@@ -241,5 +241,161 @@ export function buildNextReviewEvent(
     easeFactor: 2.5,
     completedAt: null,
     createdAt: Date.now(),
+  };
+}
+
+// ─── Daily Study Engine ───────────────────────────────────────────────────────
+
+const BASE_SCORE: Record<StudyPlanItem["itemType"], number> = {
+  remediation: 100,
+  quiz: 70,
+  checkpoint: 50,
+  retention_review: 40,
+  read_sections: 30,
+  flashcard_review: 20,
+};
+
+export type ScoredItem = StudyPlanItem & {
+  urgencyScore: number;
+  isOverdue: boolean;
+  daysPastDue: number;
+  planTitle: string;
+  documentTitle: string;
+};
+
+export function scoreItem(
+  item: StudyPlanItem,
+  now: number,
+  context: {
+    hasRecentFailure: boolean;
+    maxConfusionLevel: number;
+    planTitle: string;
+    documentTitle: string;
+  },
+): ScoredItem {
+  const todayMidnight = utcMidnight(now);
+  const daysPastDue = Math.max(0, Math.floor((todayMidnight - item.scheduledDate) / DAY_MS));
+  const isOverdue = daysPastDue > 0;
+
+  let score = BASE_SCORE[item.itemType] ?? 30;
+  score *= 1 + Math.min(1.0, daysPastDue * 0.1); // +10% per overdue day, cap at +100%
+  if (context.hasRecentFailure) score += 30;
+  if (context.maxConfusionLevel >= 4) score += 20;
+  else if (context.maxConfusionLevel === 3) score += 10;
+
+  return {
+    ...item,
+    urgencyScore: Math.round(score),
+    isOverdue,
+    daysPastDue,
+    planTitle: context.planTitle,
+    documentTitle: context.documentTitle,
+  };
+}
+
+export type QuizReadyDoc = {
+  documentId: string;
+  documentTitle: string;
+  difficultyLevel: string;
+};
+
+export type WeakTopic = {
+  topic: string;
+  missCount: number;
+};
+
+export type DailyBrief = {
+  date: string;          // YYYY-MM-DD UTC
+  todayItems: ScoredItem[];
+  overdueItems: ScoredItem[];
+  dueReviews: ReviewScheduleEvent[];
+  quizReadyDocs: QuizReadyDoc[];
+  weakTopics: WeakTopic[];
+  summary: {
+    totalPending: number;
+    estimatedMins: number;
+    overdueCount: number;
+    reviewsDue: number;
+  };
+};
+
+export function buildDailyBrief(params: {
+  allItems: StudyPlanItem[];       // pending items from today and past
+  dueReviews: ReviewScheduleEvent[];
+  progressions: DocumentProgression[];
+  recentAttempts: QuizAttempt[];
+  confusionByDoc: Record<string, number>;
+  planTitleById: Record<string, string>;
+  docTitleById: Record<string, string>;
+  now: number;
+}): DailyBrief {
+  const { allItems, dueReviews, progressions, recentAttempts,
+    confusionByDoc, planTitleById, docTitleById, now } = params;
+
+  const todayMidnight = utcMidnight(now);
+  const dateStr = new Date(todayMidnight).toISOString().slice(0, 10);
+
+  // Build context lookup sets
+  const failedDocIds = new Set(
+    recentAttempts.filter((a) => a.score < 95).map((a) => a.documentId),
+  );
+
+  const todayItems: ScoredItem[] = [];
+  const overdueItems: ScoredItem[] = [];
+
+  for (const item of allItems) {
+    const scored = scoreItem(item, now, {
+      hasRecentFailure: failedDocIds.has(item.documentId),
+      maxConfusionLevel: confusionByDoc[item.documentId] ?? 0,
+      planTitle: planTitleById[item.planId] ?? "Study Plan",
+      documentTitle: docTitleById[item.documentId] ?? "Document",
+    });
+    if (item.scheduledDate >= todayMidnight) {
+      todayItems.push(scored);
+    } else {
+      overdueItems.push(scored);
+    }
+  }
+
+  todayItems.sort((a, b) => b.urgencyScore - a.urgencyScore);
+  overdueItems.sort((a, b) => b.urgencyScore - a.urgencyScore);
+
+  // Quiz-ready documents (unlocked, not mastered yet)
+  const quizReadyDocs: QuizReadyDoc[] = progressions
+    .filter((p) => p.quizUnlocked && !p.masteredAt)
+    .map((p) => ({
+      documentId: p.documentId,
+      documentTitle: docTitleById[p.documentId] ?? "Document",
+      difficultyLevel: p.currentDifficultyLevel,
+    }));
+
+  // Cross-document weak topics from recent quiz attempts
+  const topicCounts: Record<string, number> = {};
+  for (const attempt of recentAttempts) {
+    for (const topic of attempt.weakTopics) {
+      topicCounts[topic] = (topicCounts[topic] ?? 0) + 1;
+    }
+  }
+  const weakTopics: WeakTopic[] = Object.entries(topicCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([topic, missCount]) => ({ topic, missCount }));
+
+  const allPending = [...todayItems, ...overdueItems];
+  const estimatedMins = allPending.reduce((acc, i) => acc + i.estimatedMins, 0);
+
+  return {
+    date: dateStr,
+    todayItems,
+    overdueItems,
+    dueReviews,
+    quizReadyDocs,
+    weakTopics,
+    summary: {
+      totalPending: allPending.length,
+      estimatedMins,
+      overdueCount: overdueItems.length,
+      reviewsDue: dueReviews.length,
+    },
   };
 }

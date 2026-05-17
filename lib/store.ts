@@ -2310,3 +2310,48 @@ export async function completeReviewEvent(
   if (error) throw new Error(`completeReviewEvent: ${error.message}`);
   return rowToReviewEvent(data as Record<string, unknown>);
 }
+
+export async function getUserPlanItemsInRange(
+  userId: string,
+  dateFrom: number,
+  dateTo: number,
+): Promise<StudyPlanItem[]> {
+  const plans = await listStudyPlans(userId);
+  const activePlanIds = plans.filter((p) => p.status === "active").map((p) => p.id);
+  if (activePlanIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("study_plan_items")
+    .select("*")
+    .in("plan_id", activePlanIds)
+    .gte("scheduled_date", dateFrom)
+    .lte("scheduled_date", dateTo)
+    .is("completed_at", null)
+    .is("skipped_at", null)
+    .order("scheduled_date", { ascending: true })
+    .order("position", { ascending: true });
+  if (error) throw new Error(`getUserPlanItemsInRange: ${error.message}`);
+  return (data ?? []).map((r) => rowToPlanItem(r as Record<string, unknown>));
+}
+
+export async function getMaxConfusionByDocument(
+  userId: string,
+  documentIds: string[],
+): Promise<Record<string, number>> {
+  if (documentIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from("reviewer_notes")
+    .select("document_id, confusion_level")
+    .eq("user_id", userId)
+    .in("document_id", documentIds)
+    .not("confusion_level", "is", null);
+  if (error) throw new Error(`getMaxConfusionByDocument: ${error.message}`);
+  const result: Record<string, number> = {};
+  for (const row of data ?? []) {
+    const r = row as Record<string, unknown>;
+    const docId = r.document_id as string;
+    const level = r.confusion_level as number;
+    result[docId] = Math.max(result[docId] ?? 0, level);
+  }
+  return result;
+}
