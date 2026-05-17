@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProgression, upsertProgression, getDocument } from "@/lib/store";
+import { getProgression, upsertProgression, getDocument, insertLearningEvent } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { buildInitialProgression, getPendingCheckpoint, isQuizUnlockEligible, nextDifficultyLevel } from "@/lib/progression";
 import type { DocumentProgression } from "@/lib/types";
@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
       }
 
       await upsertProgression(progression);
+      void insertLearningEvent(user.id, documentId, "section_complete", { sectionIndex });
       const pendingCheckpoint = getPendingCheckpoint(progression);
       return NextResponse.json({ progression, pendingCheckpoint });
     }
@@ -120,6 +121,7 @@ export async function POST(req: NextRequest) {
         progression.quizUnlocked = true;
       }
       await upsertProgression(progression);
+      void insertLearningEvent(user.id, documentId, "flashcard_session_complete", {});
       return NextResponse.json({ progression });
     }
 
@@ -136,6 +138,10 @@ export async function POST(req: NextRequest) {
         progression.quizUnlocked = false;
       }
       await upsertProgression(progression);
+      void insertLearningEvent(user.id, documentId, passed ? "quiz_pass" : "quiz_fail", { passed });
+      if (!passed) {
+        void insertLearningEvent(user.id, documentId, "remediation_triggered", {});
+      }
       return NextResponse.json({ progression });
     }
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Brain, Sparkles, BookOpen, Layers, BarChart3, ArrowRight, Zap } from "lucide-react";
 import { UploadZone } from "@/components/upload-zone";
 import { AppShell } from "@/components/layout/AppShell";
+import { RecommendationsWidget } from "@/components/recommendations/RecommendationsWidget";
 import { listDocuments } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { formatDistanceToNow } from "@/lib/utils";
@@ -84,6 +85,7 @@ async function HomeContent() {
         <div className="mb-10 flex justify-center">
           <UploadZone />
         </div>
+        <RecommendationsWidget />
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-foreground">Recent documents</h2>
           <Link href="/library" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">

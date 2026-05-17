@@ -148,9 +148,16 @@ export async function deleteDocument(id: string, userId: string): Promise<void> 
   if (error) throw new Error(`deleteDocument: ${error.message}`);
 }
 
-export async function listDocuments(userId: string): Promise<
-  Array<Omit<Document, "text" | "reviewer" | "quiz" | "flashcards">>
-> {
+export type DocSummary = Omit<Document, "text" | "reviewer" | "quiz" | "flashcards"> & {
+  hasReviewer: boolean;
+  hasQuiz: boolean;
+  hasFlashcards: boolean;
+  conceptCount: number;
+  questionCount: number;
+  flashcardCount: number;
+};
+
+export async function listDocuments(userId: string): Promise<DocSummary[]> {
   const { data, error } = await supabase
     .from("documents")
     .select(
@@ -533,6 +540,49 @@ function rowToProgression(row: Record<string, unknown>): import("./types").Docum
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };
+}
+
+export async function listProgressions(
+  userId: string,
+): Promise<import("./types").DocumentProgression[]> {
+  const { data: docRows, error: docErr } = await supabase
+    .from("documents")
+    .select("id")
+    .eq("user_id", userId);
+  if (docErr) throw new Error(`listProgressions docs: ${docErr.message}`);
+
+  const docIds = (docRows ?? []).map((r) => (r as Record<string, unknown>).id as string);
+  if (docIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("document_progressions")
+    .select("*")
+    .in("document_id", docIds);
+  if (error) throw new Error(`listProgressions: ${error.message}`);
+  return (data ?? []).map((r) => rowToProgression(r as Record<string, unknown>));
+}
+
+export async function getRecentQuizAttempts(userId: string, limit = 20): Promise<QuizAttempt[]> {
+  const { data, error } = await supabase
+    .from("quiz_attempts")
+    .select("quiz_id, document_id, document_title, score, total_questions, correct_answers, weak_topics, completed_at")
+    .eq("user_id", userId)
+    .order("completed_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`getRecentQuizAttempts: ${error.message}`);
+  return (data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      quizId: row.quiz_id as string,
+      documentId: row.document_id as string,
+      documentTitle: row.document_title as string,
+      score: row.score as number,
+      totalQuestions: row.total_questions as number,
+      correctAnswers: row.correct_answers as number,
+      weakTopics: (row.weak_topics as string[]) ?? [],
+      completedAt: row.completed_at as number,
+    };
+  });
 }
 
 // ─── Checkpoint Flashcards ────────────────────────────────────────────────────
@@ -1799,6 +1849,27 @@ export async function insertLearningEvent(
   } catch (err) {
     console.error("insertLearningEvent unexpected error:", err);
   }
+}
+
+export async function getLearningEvents(
+  userId: string,
+  sinceTimestamp: number,
+  limit = 200,
+): Promise<Array<{ eventType: string; documentId: string | null; eventData: Record<string, unknown>; recordedAt: number }>> {
+  const { data, error } = await supabase
+    .from("learning_analytics")
+    .select("event_type, document_id, event_data, recorded_at")
+    .eq("user_id", userId)
+    .gte("recorded_at", sinceTimestamp)
+    .order("recorded_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`getLearningEvents: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    eventType: r.event_type as string,
+    documentId: (r.document_id as string | null) ?? null,
+    eventData: (r.event_data as Record<string, unknown>) ?? {},
+    recordedAt: r.recorded_at as number,
+  }));
 }
 
 // ─── Reviewer Highlights ──────────────────────────────────────────────────────

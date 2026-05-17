@@ -12,6 +12,7 @@ import {
   Clock,
   BarChart3,
   Loader2,
+  Activity,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Progress } from "@/components/ui/progress";
@@ -55,16 +56,26 @@ function StatCard({
   );
 }
 
+type DailyCount = { date: string; count: number };
+type UserActivity = {
+  dailyCounts: DailyCount[];
+  eventTypeCounts: Record<string, number>;
+  totalEvents: number;
+} | null;
+
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [userActivity, setUserActivity] = useState<UserActivity>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/analytics")
-      .then((r) => r.json())
-      .then((data) => setAnalytics(data.analytics))
-      .catch(() => null)
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetch("/api/analytics").then((r) => r.json()).catch(() => null),
+      fetch("/api/analytics/user").then((r) => r.json()).catch(() => null),
+    ]).then(([analyticsData, activityData]) => {
+      if (analyticsData?.analytics) setAnalytics(analyticsData.analytics);
+      if (activityData?.dailyCounts) setUserActivity(activityData);
+    }).finally(() => setLoading(false));
   }, []);
 
   if (loading) {
@@ -316,6 +327,90 @@ export default function AnalyticsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Study Activity — 14-day bar chart from learning_analytics */}
+          {userActivity && (
+            <div className="mt-6 rounded-xl border border-border bg-card p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="h-4 w-4 text-primary" />
+                <h2 className="font-semibold text-foreground">Study Activity</h2>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {userActivity.totalEvents} event{userActivity.totalEvents !== 1 ? "s" : ""} in the last 14 days
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Sections read, quizzes, and flashcard sessions
+              </p>
+
+              {userActivity.totalEvents === 0 ? (
+                <div className="flex flex-col items-center py-6 gap-2">
+                  <Activity className="h-8 w-8 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground text-center">
+                    No activity recorded yet — start studying to see your activity here.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Daily bar chart */}
+                  <div className="flex items-end gap-1 h-20 mb-2">
+                    {userActivity.dailyCounts.map(({ date, count }, i) => {
+                      const maxCount = Math.max(...userActivity.dailyCounts.map((d) => d.count), 1);
+                      const pct = Math.round((count / maxCount) * 100);
+                      return (
+                        <div key={date} className="flex-1 flex flex-col items-center gap-1">
+                          <motion.div
+                            initial={{ height: 0 }}
+                            animate={{ height: `${pct}%` }}
+                            transition={{ delay: i * 0.03, duration: 0.4, ease: "easeOut" }}
+                            className="w-full rounded-t-sm bg-primary/50 min-h-[2px]"
+                            style={{ minHeight: count > 0 ? "4px" : "2px" }}
+                            title={`${date}: ${count} event${count !== 1 ? "s" : ""}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-between text-[10px] text-muted-foreground mb-4">
+                    <span>
+                      {new Date(userActivity.dailyCounts[0].date + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </span>
+                    <span>Today</span>
+                  </div>
+
+                  {/* Event type breakdown */}
+                  <div className="flex flex-wrap gap-3">
+                    {Object.entries(userActivity.eventTypeCounts)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([type, count]) => {
+                        const label: Record<string, string> = {
+                          section_complete: "Sections",
+                          quiz_pass: "Quiz Passes",
+                          quiz_fail: "Quiz Fails",
+                          flashcard_session_complete: "Flashcard Sessions",
+                          remediation_triggered: "Remediations",
+                        };
+                        const colorClass: Record<string, string> = {
+                          section_complete: "text-emerald-500 bg-emerald-500/10",
+                          quiz_pass: "text-violet-500 bg-violet-500/10",
+                          quiz_fail: "text-red-500 bg-red-500/10",
+                          flashcard_session_complete: "text-sky-500 bg-sky-500/10",
+                          remediation_triggered: "text-amber-500 bg-amber-500/10",
+                        };
+                        return (
+                          <div
+                            key={type}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${colorClass[type] ?? "text-muted-foreground bg-muted"}`}
+                          >
+                            <span>{count}</span>
+                            <span>{label[type] ?? type}</span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
