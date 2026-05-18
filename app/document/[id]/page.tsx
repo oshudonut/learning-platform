@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode, StudyPreset, StudyTransformation, RapidRecallReviewer } from "@/lib/types";
 import { STUDY_PRESETS } from "@/lib/types";
 import type { ReviewerHighlight } from "@/lib/store";
-import { cn } from "@/lib/utils";
+import { cn, safeJson } from "@/lib/utils";
 import { PlannerStatusBanner } from "@/components/planner/PlannerStatusBanner";
 
 type Tab = "transcript" | "review" | "quiz" | "flashcards" | "tutor";
@@ -213,7 +213,7 @@ function DocumentPageInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, force, learningMethod: method, studyMode: mode }),
       });
-      const data = await res.json();
+      const data = await safeJson<{ reviewer: AnyReviewer; error?: string; transformation?: StudyTransformation; freshProgression?: DocumentProgression; }>(res);
       if (data.error) throw new Error(data.error);
       setReviewer({ status: "success", data: data.reviewer });
       if (!doc?.hasReviewer) setDoc((d) => d && { ...d, hasReviewer: true });
@@ -241,7 +241,7 @@ function DocumentPageInner() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "get", documentId: id }),
         });
-        const progData = await progRes.json();
+        const progData = await safeJson<{ progression?: DocumentProgression }>(progRes).catch((): { progression?: DocumentProgression } => ({}));
         if (progData.progression) {
           setProgression(progData.progression);
           setRemediationActive(progData.progression.remediationActive);
@@ -278,7 +278,7 @@ function DocumentPageInner() {
         setQuiz({ status: "error", error: "locked" });
         return;
       }
-      const data = await res.json();
+      const data = await safeJson<{ quiz?: { questions: ExtendedQuizQuestion[] }; error?: string }>(res);
       if (data.error) throw new Error(data.error);
       setQuiz({ status: "success", data: data.quiz });
       if (!doc?.hasQuiz) setDoc((d) => d && { ...d, hasQuiz: true });
@@ -295,7 +295,7 @@ function DocumentPageInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, force }),
       });
-      const data = await res.json();
+      const data = await safeJson<{ flashcards?: Flashcard[]; error?: string }>(res);
       if (data.error) throw new Error(data.error);
       setFlashcards({ status: "success", data: data.flashcards });
       if (!doc?.hasFlashcards) setDoc((d) => d && { ...d, hasFlashcards: true });
@@ -305,13 +305,17 @@ function DocumentPageInner() {
   }, [id, doc]);
 
   const handleSectionComplete = useCallback(async (sectionIndex: number) => {
-    const res = await fetch("/api/progression", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "complete_section", documentId: id, sectionIndex }),
-    });
-    const data = await res.json();
-    if (data.progression) setProgression(data.progression);
+    try {
+      const res = await fetch("/api/progression", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "complete_section", documentId: id, sectionIndex }),
+      });
+      const data = await safeJson<{ progression?: DocumentProgression }>(res);
+      if (data.progression) setProgression(data.progression);
+    } catch {
+      // Non-fatal — progression mark failed silently; user can retry by re-clicking section
+    }
   }, [id]);
 
   const handlePresetSelect = useCallback(async (preset: StudyPreset) => {
@@ -347,9 +351,10 @@ function DocumentPageInner() {
             force: true,
           }),
         });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error as string);
-        transformationState.activate(data.transformation as StudyTransformation);
+        const data = await safeJson<{ transformation?: StudyTransformation; error?: string }>(res);
+        if (data.error) throw new Error(data.error);
+        if (!data.transformation) throw new Error("No transformation returned");
+        transformationState.activate(data.transformation);
         // rapid_recall content is rendered directly from transformationState.active,
         // not via ReviewerView; use "success" status with no data to show the tab
         setReviewer({ status: "success" });
@@ -380,27 +385,33 @@ function DocumentPageInner() {
   // Called when a flashcard session finishes — marks the challenge complete
   // server-side, which in turn sets quizUnlocked when all sections are done.
   const handleFlashcardChallengeComplete = useCallback(async () => {
-    const res = await fetch("/api/progression", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "complete_flashcard_challenge", documentId: id }),
-    });
-    const data = await res.json();
-    if (data.progression) {
-      setProgression(data.progression);
+    try {
+      const res = await fetch("/api/progression", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "complete_flashcard_challenge", documentId: id }),
+      });
+      const data = await safeJson<{ progression?: DocumentProgression }>(res);
+      if (data.progression) setProgression(data.progression);
+    } catch {
+      // Non-fatal — challenge completion failed silently
     }
   }, [id]);
 
   const handleQuizComplete = useCallback(async (passed: boolean, weakTopics: string[]) => {
-    const progRes = await fetch("/api/progression", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "get", documentId: id }),
-    });
-    const progData = await progRes.json();
-    if (progData.progression) {
-      setProgression(progData.progression);
-      setRemediationActive(progData.progression.remediationActive);
+    try {
+      const progRes = await fetch("/api/progression", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "get", documentId: id }),
+      });
+      const progData = await safeJson<{ progression?: DocumentProgression }>(progRes);
+      if (progData.progression) {
+        setProgression(progData.progression);
+        setRemediationActive(progData.progression.remediationActive);
+      }
+    } catch {
+      // Non-fatal — progression refresh failed; UI continues from current state
     }
     if (!passed && weakTopics.length > 0) {
       setRemediationActive(true);
@@ -686,19 +697,23 @@ function DocumentPageInner() {
                           size="sm"
                           className="text-muted-foreground"
                           onClick={async () => {
-                            await fetch("/api/remediation", {
-                              method: "POST",
-                              headers: { "content-type": "application/json" },
-                              body: JSON.stringify({ action: "complete", documentId: id }),
-                            });
-                            setRemediationActive(false);
-                            const progRes = await fetch("/api/progression", {
-                              method: "POST",
-                              headers: { "content-type": "application/json" },
-                              body: JSON.stringify({ action: "get", documentId: id }),
-                            });
-                            const progData = await progRes.json();
-                            if (progData.progression) setProgression(progData.progression);
+                            try {
+                              await fetch("/api/remediation", {
+                                method: "POST",
+                                headers: { "content-type": "application/json" },
+                                body: JSON.stringify({ action: "complete", documentId: id }),
+                              });
+                              setRemediationActive(false);
+                              const progRes = await fetch("/api/progression", {
+                                method: "POST",
+                                headers: { "content-type": "application/json" },
+                                body: JSON.stringify({ action: "get", documentId: id }),
+                              });
+                              const progData = await safeJson<{ progression?: DocumentProgression }>(progRes);
+                              if (progData.progression) setProgression(progData.progression);
+                            } catch {
+                              setRemediationActive(false);
+                            }
                           }}
                         >
                           Skip Remediation

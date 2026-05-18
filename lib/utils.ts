@@ -33,6 +33,25 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * Safely parse JSON from a fetch Response.
+ * Throws with the server's error message when !res.ok, preventing
+ * "Unexpected token" crashes when the server returns an HTML/text error page.
+ */
+export async function safeJson<T = Record<string, unknown>>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const body = await res.json() as { error?: string };
+      if (body.error) msg = body.error;
+    } catch {
+      // Body was not JSON (HTML error page). Keep HTTP status message.
+    }
+    throw new Error(msg);
+  }
+  return res.json() as Promise<T>;
+}
+
 export function truncate(str: string, length: number): string {
   if (str.length <= length) return str;
   return str.slice(0, length) + "…";
