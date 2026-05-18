@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PenLine, ChevronDown, ChevronUp, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NoteCoach } from "@/components/reviewer/NoteCoach";
+import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -10,6 +12,8 @@ type ReviewerNotepadProps = {
   documentId: string;
   topicIndex: number;
   initialNote?: { noteText: string; confusionLevel: number | null } | null;
+  topic?: NoteCoachTopic;
+  studyMode?: string;
   onConfused?: (noteText: string, confusionLevel: number) => void;
 };
 
@@ -29,7 +33,7 @@ const CONFUSION_COLORS: Record<number, string> = {
   5: "text-red-500 border-red-500/40 bg-red-500/8",
 };
 
-export function ReviewerNotepad({ documentId, topicIndex, initialNote, onConfused }: ReviewerNotepadProps) {
+export function ReviewerNotepad({ documentId, topicIndex, initialNote, topic, studyMode, onConfused }: ReviewerNotepadProps) {
   const [open, setOpen] = useState(Boolean(initialNote?.noteText));
   const [noteText, setNoteText] = useState(initialNote?.noteText ?? "");
   const [confusionLevel, setConfusionLevel] = useState<number | null>(initialNote?.confusionLevel ?? null);
@@ -155,6 +159,11 @@ export function ReviewerNotepad({ documentId, topicIndex, initialNote, onConfuse
               )}
             </div>
           </div>
+
+          {/* AI Study Coach — appears after debounce when note is substantial */}
+          {topic && (
+            <NoteCoach noteText={noteText} topic={topic} studyMode={studyMode} />
+          )}
         </div>
       )}
     </div>

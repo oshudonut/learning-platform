@@ -503,6 +503,7 @@ export function ReviewerView({
             documentId={documentId}
             topicIndex={currentIdx}
             note={notes?.get(currentIdx) ?? null}
+            studyMode={resolvedMode ?? undefined}
             highlights={highlights?.filter((h) => h.topicIndex === currentIdx)}
             onHighlightCreated={onHighlightCreated}
             onHighlightDeleted={onHighlightDeleted}

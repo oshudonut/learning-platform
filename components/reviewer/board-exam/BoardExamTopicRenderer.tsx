@@ -23,6 +23,7 @@ interface BoardExamTopicRendererProps {
   documentId?: string;
   topicIndex?: number;
   note?: { noteText: string; confusionLevel: number | null } | null;
+  studyMode?: string;
   highlights?: ReviewerHighlight[];
   onHighlightCreated?: (h: ReviewerHighlight) => void;
   onHighlightDeleted?: (id: string) => void;
@@ -60,6 +61,7 @@ export function BoardExamTopicRenderer({
   documentId,
   topicIndex,
   note,
+  studyMode,
   highlights = [],
   onHighlightCreated,
   onHighlightDeleted,
@@ -281,6 +283,8 @@ export function BoardExamTopicRenderer({
           documentId={documentId}
           topicIndex={topicIndex}
           initialNote={note ?? null}
+          topic={companionTopic}
+          studyMode={studyMode}
           onConfused={(noteText, confusionLevel) => handleOpenCompanion("confusion", noteText, confusionLevel)}
         />
       )}
