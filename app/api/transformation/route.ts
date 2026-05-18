@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { getDocument, updateDocument } from "@/lib/store";
 import { generateTransformation } from "@/lib/transformation-service";
+import { fireEvent, ANALYTICS_EVENTS } from "@/lib/analytics-events";
 import type { LearningMethod, StudyMode, StudyTransformationType } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -37,6 +38,22 @@ export async function POST(req: NextRequest) {
     const doc = await getDocument(documentId, user.id);
     if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
 
+    if (force) {
+      fireEvent(ANALYTICS_EVENTS.REGENERATION_TRIGGERED, {
+        documentId,
+        transformationType,
+        learningMethod,
+        studyMode,
+      });
+    } else {
+      fireEvent(ANALYTICS_EVENTS.TRANSFORMATION_STARTED, {
+        documentId,
+        transformationType,
+        learningMethod,
+        studyMode,
+      });
+    }
+
     const { transformation, cached } = await generateTransformation({
       doc,
       transformationType,
@@ -57,6 +74,20 @@ export async function POST(req: NextRequest) {
     if (isReviewerType && !cached) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateDocument(documentId, user.id, { reviewer: transformation.content as any });
+    }
+
+    if (cached) {
+      fireEvent(ANALYTICS_EVENTS.TRANSFORMATION_CACHE_HIT, {
+        documentId,
+        transformationType,
+      });
+    } else {
+      fireEvent(ANALYTICS_EVENTS.TRANSFORMATION_COMPLETED, {
+        documentId,
+        transformationType,
+        generationTimeMs: transformation.generationTimeMs,
+        estimatedCostUsd: transformation.estimatedCostUsd,
+      });
     }
 
     return NextResponse.json({

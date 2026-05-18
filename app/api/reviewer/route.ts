@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
 import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig, buildAnchorInstruction } from "@/lib/prompts";
-import { getDocument, updateDocument, computeContentHash, getDocumentByContentHash, getProgression, upsertProgression, markHighlightsStale, saveStudyTransformation } from "@/lib/store";
+import { getDocument, updateDocument, computeContentHash, getDocumentByContentHash, getProgression, upsertProgression, markHighlightsStale, saveStudyTransformation, listTransformationHistory } from "@/lib/store";
 import { buildInitialProgression } from "@/lib/progression";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { buildTranscriptContext, buildPageIndex } from "@/lib/transformation-service";
 import { randomId } from "@/lib/utils";
+import { fireEvent, ANALYTICS_EVENTS } from "@/lib/analytics-events";
+import type { StudyTransformation } from "@/lib/types";
 import {
   ReviewerSchema,
   ConceptualReviewerSchema,
@@ -49,14 +51,33 @@ export async function POST(req: NextRequest) {
     }
 
     if (doc.reviewer && !force) {
-      return NextResponse.json({ reviewer: doc.reviewer, cached: true, cacheSource: "stored" });
+      // Return latest transformation metadata alongside cached reviewer for history/meta surface
+      const [latestTransformation] = await listTransformationHistory(id, user.id, 1).catch(() => []);
+      return NextResponse.json({
+        reviewer: doc.reviewer,
+        cached: true,
+        cacheSource: "stored",
+        transformation: latestTransformation ?? null,
+      });
     }
 
     const incomingHash = computeContentHash(doc.text);
 
     if (!force && doc.contentHash === incomingHash && doc.reviewer) {
-      return NextResponse.json({ reviewer: doc.reviewer, cached: true, cacheSource: "hash" });
+      const [latestTransformation] = await listTransformationHistory(id, user.id, 1).catch(() => []);
+      return NextResponse.json({
+        reviewer: doc.reviewer,
+        cached: true,
+        cacheSource: "hash",
+        transformation: latestTransformation ?? null,
+      });
     }
+
+    fireEvent(ANALYTICS_EVENTS.TRANSFORMATION_STARTED, {
+      documentId: id,
+      learningMethod,
+      studyMode,
+    });
 
     let resolvedMethod = learningMethod;
     let resolvedMode = studyMode;
@@ -117,13 +138,14 @@ export async function POST(req: NextRequest) {
     await updateDocument(id, user.id, { reviewer: parsed as any, ...hashPatch });
 
     // Record in study_transformations for history/cost tracking (best-effort)
+    let savedTransformation: StudyTransformation | null = null;
     try {
       const transcriptVersion = doc.transcript?.meta.version ?? 1;
       const transformationType =
-        schemaType === "conceptual" ? "conceptual"
-        : schemaType === "retrieval" ? "active_recall"
-        : "reviewer";
-      await saveStudyTransformation({
+        schemaType === "conceptual" ? "conceptual" as const
+        : schemaType === "retrieval" ? "active_recall" as const
+        : "reviewer" as const;
+      const t: StudyTransformation = {
         id: randomId(),
         documentId: id,
         userId: user.id,
@@ -144,9 +166,17 @@ export async function POST(req: NextRequest) {
           / 1_000_000,
         sourceAnchors: [],
         metadata: { fromTranscript: Boolean(doc.transcript), viaLegacyRoute: true },
-        content: parsed as never,
+        content: parsed as StudyTransformation["content"],
         supersededBy: null,
         createdAt: startTime,
+      };
+      await saveStudyTransformation(t);
+      savedTransformation = t;
+      fireEvent(ANALYTICS_EVENTS.TRANSFORMATION_COMPLETED, {
+        documentId: id,
+        transformationType,
+        generationTimeMs,
+        estimatedCostUsd: t.estimatedCostUsd,
       });
     } catch {
       // Non-fatal — transformation record is supplementary
@@ -184,6 +214,7 @@ export async function POST(req: NextRequest) {
       schemaType,
       progressionReset,
       freshProgression,
+      transformation: savedTransformation,
       usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens },
     });
   } catch (err: unknown) {

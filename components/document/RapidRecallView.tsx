@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronDown, ChevronRight, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RapidRecallReviewer, RapidRecallDrillSet } from "@/lib/types";
@@ -104,7 +104,7 @@ interface RapidRecallViewProps {
   data: RapidRecallReviewer;
 }
 
-export function RapidRecallView({ data }: RapidRecallViewProps) {
+function RapidRecallViewInner({ data }: RapidRecallViewProps) {
   const mustKnowCount = data.drillSets.reduce(
     (acc, ds) => acc + ds.items.filter((i) => i.flag === "MUST_KNOW").length,
     0,
@@ -145,3 +145,5 @@ export function RapidRecallView({ data }: RapidRecallViewProps) {
     </div>
   );
 }
+
+export const RapidRecallView = memo(RapidRecallViewInner);

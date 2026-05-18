@@ -23,6 +23,9 @@ import { ReviewerView } from "@/components/reviewer/ReviewerView";
 import { StudyPresetPicker } from "@/components/transcript/StudyPresetPicker";
 import { RapidRecallView } from "@/components/document/RapidRecallView";
 import { TransformationHistory } from "@/components/document/TransformationHistory";
+import { TransformationMeta } from "@/components/document/TransformationMeta";
+import { TransformationStaleWarning } from "@/components/document/TransformationStaleWarning";
+import { useTransformationState } from "@/hooks/useTransformationState";
 import { QuizEngine } from "@/components/quiz/QuizEngine";
 import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
 import { TutorChat } from "@/components/tutor/TutorChat";
@@ -48,6 +51,7 @@ type DocMeta = {
   hasTranscript: boolean;
   transcriptStatus: string;
   transcriptPageCount: number;
+  transcriptVersion: number;
 };
 
 type LoadState<T> = { status: "idle" | "loading" | "success" | "error"; data?: T; error?: string };
@@ -137,8 +141,10 @@ function DocumentPageInner() {
   const [pendingMethod, setPendingMethod] = useState<LearningMethod | null>(null);
   const [pendingMode, setPendingMode] = useState<StudyMode | null>(null);
   const [pendingPreset, setPendingPreset] = useState<StudyPreset | null>(null);
-  // tracks the most-recently generated/loaded study transformation
-  const [activeTransformation, setActiveTransformation] = useState<StudyTransformation | null>(null);
+  // centralized transformation state — tracks active record, history, stale status
+  const transformationState = useTransformationState(id, doc?.transcriptVersion);
+  // local flag: user dismissed the stale banner for the current active transformation
+  const [staleDismissed, setStaleDismissed] = useState(false);
 
   // Load document metadata + progression
   useEffect(() => {
@@ -152,7 +158,10 @@ function DocumentPageInner() {
           transcriptTabApplied.current = true;
           setActiveTab("transcript");
         }
-        if (data.document?.hasReviewer) loadReviewer(false);
+        if (data.document?.hasReviewer) {
+          loadReviewer(false);
+          void transformationState.loadHistory();
+        }
       })
       .catch(() => null)
       .finally(() => setDocLoading(false));
@@ -193,6 +202,9 @@ function DocumentPageInner() {
       .catch(() => null);
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset stale-dismissed flag whenever a new transformation becomes active
+  useEffect(() => { setStaleDismissed(false); }, [transformationState.active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadReviewer = useCallback(async (force = false, method?: LearningMethod, mode?: StudyMode) => {
     setReviewer({ status: "loading" });
     try {
@@ -205,6 +217,9 @@ function DocumentPageInner() {
       if (data.error) throw new Error(data.error);
       setReviewer({ status: "success", data: data.reviewer });
       if (!doc?.hasReviewer) setDoc((d) => d && { ...d, hasReviewer: true });
+      if (data.transformation) {
+        transformationState.activate(data.transformation as StudyTransformation);
+      }
 
       if (data.freshProgression) {
         // Reviewer API reset progression — apply the fresh state directly without
@@ -334,8 +349,8 @@ function DocumentPageInner() {
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error as string);
-        setActiveTransformation(data.transformation as StudyTransformation);
-        // rapid_recall content is rendered directly from activeTransformation,
+        transformationState.activate(data.transformation as StudyTransformation);
+        // rapid_recall content is rendered directly from transformationState.active,
         // not via ReviewerView; use "success" status with no data to show the tab
         setReviewer({ status: "success" });
         if (!doc?.hasReviewer) setDoc((d) => d && { ...d, hasReviewer: true });
@@ -348,7 +363,6 @@ function DocumentPageInner() {
 
     // Reviewer-type presets: use existing loadReviewer (handles progression reset)
     if (config.learningMethod && config.studyMode) {
-      setActiveTransformation(null);
       await handleMethodSelect(config.learningMethod, config.studyMode);
       setActiveTab("review");
     }
@@ -566,28 +580,45 @@ function DocumentPageInner() {
                     </div>
                   ) : reviewer.status === "success" ? (
                     <div className="space-y-6">
-                      <div className="flex justify-end">
+                      <div className="flex items-center justify-between gap-2">
+                        {/* Transformation metadata */}
+                        {transformationState.active && (
+                          <TransformationMeta transformation={transformationState.active} />
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => {
                             if (confirm("Regenerating will reset your section progress. Continue?")) {
                               setReviewer({ status: "idle" });
-                              setActiveTransformation(null);
+                              transformationState.reset();
                               setProgression(null);
                               setRemediationActive(false);
                             }
                           }}
-                          className="text-muted-foreground hover:text-foreground"
+                          className="text-muted-foreground hover:text-foreground ml-auto flex-shrink-0"
                         >
                           <RefreshCw className="h-3.5 w-3.5" />Regenerate
                         </Button>
                       </div>
 
+                      {/* Stale transcript warning */}
+                      {transformationState.isStale && !staleDismissed && (
+                        <TransformationStaleWarning
+                          transformationVersion={transformationState.active!.transcriptVersion}
+                          currentVersion={doc.transcriptVersion ?? 1}
+                          onRegenerate={() => {
+                            const preset = pendingPreset ?? "board_exam_reviewer";
+                            void handlePresetSelect(preset);
+                          }}
+                          onDismiss={() => setStaleDismissed(true)}
+                        />
+                      )}
+
                       {/* Rapid Recall view */}
-                      {activeTransformation?.transformationType === "rapid_recall" ? (
+                      {transformationState.active?.transformationType === "rapid_recall" ? (
                         <RapidRecallView
-                          data={activeTransformation.content as unknown as RapidRecallReviewer}
+                          data={transformationState.active.content as unknown as RapidRecallReviewer}
                         />
                       ) : reviewer.data ? (
                         <>
@@ -616,10 +647,10 @@ function DocumentPageInner() {
 
                       {/* Transformation history */}
                       <TransformationHistory
-                        documentId={id}
-                        activeTransformationId={activeTransformation?.id ?? null}
+                        history={transformationState.history}
+                        activeTransformationId={transformationState.active?.id ?? null}
                         onLoad={(t) => {
-                          setActiveTransformation(t);
+                          transformationState.activate(t);
                           if (t.transformationType === "rapid_recall") {
                             setReviewer({ status: "success" });
                           } else {
