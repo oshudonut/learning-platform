@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,13 +24,14 @@ import { MethodSelection } from "@/components/reviewer/MethodSelection";
 import { QuizEngine } from "@/components/quiz/QuizEngine";
 import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
 import { TutorChat } from "@/components/tutor/TutorChat";
+import { TranscriptWorkspace } from "@/components/transcript/TranscriptWorkspace";
 import { Button } from "@/components/ui/button";
 import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode } from "@/lib/types";
 import type { ReviewerHighlight } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { PlannerStatusBanner } from "@/components/planner/PlannerStatusBanner";
 
-type Tab = "review" | "quiz" | "flashcards" | "tutor";
+type Tab = "transcript" | "review" | "quiz" | "flashcards" | "tutor";
 
 type DocMeta = {
   id: string;
@@ -41,6 +42,9 @@ type DocMeta = {
   hasReviewer: boolean;
   hasQuiz: boolean;
   hasFlashcards: boolean;
+  hasTranscript: boolean;
+  transcriptStatus: string;
+  transcriptPageCount: number;
 };
 
 type LoadState<T> = { status: "idle" | "loading" | "success" | "error"; data?: T; error?: string };
@@ -114,6 +118,8 @@ function DocumentPageInner() {
   const [activeTab, setActiveTab] = useState<Tab>(tabParam ?? "review");
   const [doc, setDoc] = useState<DocMeta | null>(null);
   const [docLoading, setDocLoading] = useState(true);
+  // Tracks whether we've applied the transcript-default tab on first load
+  const transcriptTabApplied = useRef(false);
 
   const [reviewer, setReviewer] = useState<LoadState<AnyReviewer>>({ status: "idle" });
   const [quiz, setQuiz] = useState<LoadState<{ questions: ExtendedQuizQuestion[] }>>({ status: "idle" });
@@ -134,6 +140,12 @@ function DocumentPageInner() {
       .then((r) => r.json())
       .then((data) => {
         setDoc(data.document);
+        // Default to transcript tab on first load when transcript is available
+        // and no explicit tab param was provided via URL
+        if (data.document?.hasTranscript && !tabParam && !transcriptTabApplied.current) {
+          transcriptTabApplied.current = true;
+          setActiveTab("transcript");
+        }
         if (data.document?.hasReviewer) loadReviewer(false);
       })
       .catch(() => null)
@@ -347,6 +359,9 @@ function DocumentPageInner() {
   const quizLocked = progression ? !progression.quizUnlocked : false;
 
   const TABS = [
+    ...(doc.hasTranscript
+      ? [{ id: "transcript" as Tab, label: "Source", icon: FileText }]
+      : []),
     { id: "review" as Tab, label: "Review", icon: BookOpen },
     {
       id: "quiz" as Tab,
@@ -448,6 +463,16 @@ function DocumentPageInner() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
+              {/* TRANSCRIPT TAB */}
+              {activeTab === "transcript" && (
+                <TranscriptWorkspace
+                  documentId={id}
+                  hasReviewer={doc.hasReviewer}
+                  onGenerateReviewer={handleMethodSelect}
+                  onViewReviewer={() => setActiveTab("review")}
+                />
+              )}
+
               {/* REVIEW TAB */}
               {activeTab === "review" && (
                 <div>

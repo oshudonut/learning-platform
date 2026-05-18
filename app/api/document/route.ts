@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const { text: _text, reviewer, quiz, flashcards, ...meta } = doc;
+    const { text: _text, reviewer, quiz, flashcards, transcript, ...meta } = doc;
 
     return NextResponse.json({
       document: {
@@ -28,6 +28,9 @@ export async function GET(req: NextRequest) {
         hasReviewer: Boolean(reviewer),
         hasQuiz: Boolean(quiz),
         hasFlashcards: Boolean(flashcards?.length),
+        hasTranscript: Boolean(transcript),
+        transcriptStatus: meta.transcriptStatus ?? "none",
+        transcriptPageCount: transcript?.meta?.pageCount ?? 0,
         conceptCount: reviewer?.topics?.length ?? 0,
         questionCount: quiz?.questions?.length ?? 0,
         flashcardCount: flashcards?.length ?? 0,
