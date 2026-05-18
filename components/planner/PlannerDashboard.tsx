@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CreatePlanForm } from "./CreatePlanForm";
 import { PlannerAIChatFAB } from "./PlannerAIChat";
+import { DailyBriefingWidget } from "./DailyBriefingWidget";
 import type { StudyPlan } from "@/lib/types";
 
 const STATUS_META: Record<StudyPlan["status"], { label: string; icon: React.ElementType; color: string }> = {
@@ -127,6 +128,11 @@ export function PlannerDashboard() {
           New Plan
         </button>
       </div>
+
+      {/* Daily briefing — first active plan only */}
+      {active.length > 0 && (
+        <DailyBriefingWidget planId={active[0].id} planTitle={active[0].title} />
+      )}
 
       {/* Create form */}
       <AnimatePresence>

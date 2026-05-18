@@ -4,6 +4,7 @@ import { Brain, Sparkles, BookOpen, Layers, BarChart3, ArrowRight, Zap } from "l
 import { UploadZone } from "@/components/upload-zone";
 import { AppShell } from "@/components/layout/AppShell";
 import { RecommendationsWidget } from "@/components/recommendations/RecommendationsWidget";
+import { HomeBriefingLoader } from "@/components/planner/HomeBriefingLoader";
 import { listDocuments } from "@/lib/store";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { formatDistanceToNow } from "@/lib/utils";
@@ -86,6 +87,7 @@ async function HomeContent() {
           <UploadZone />
         </div>
         <RecommendationsWidget />
+        <HomeBriefingLoader />
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-foreground">Recent documents</h2>
           <Link href="/library" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
