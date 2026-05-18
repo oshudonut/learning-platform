@@ -425,23 +425,31 @@ export type ExtendedQuiz = {
 
 // ─── Raw Transcript (Layer 0 — immutable source data) ────────────────────────
 //
-// Page-scoped verbatim extraction. One TranscriptPage per source page.
+// Page-scoped verbatim extraction. One TranscriptPage per source page/section.
 // Never modified after creation. Reviewer is derived FROM this, never the reverse.
 //
 // sourceType values:
-//   "pdf"          — true per-page extraction via pdfjs pagerender callback
+//   "pdf"          — true per-page extraction via pdfjs pagerender callback (Phase 3)
 //   "docx"         — heading-delimited sections (no physical page concept in DOCX)
 //   "image"        — single page from OCR vision extraction
 //   "reconstructed"— built from documents.text for pre-Phase-3 uploads where
-//                    the original file was already deleted; page boundaries are
-//                    synthetic text-block splits, not source file pages
+//                    the original file was already deleted; section boundaries are
+//                    Claude-identified structural splits, not source file pages
+
+export type TranscriptSection = {
+  heading: string;   // exact heading text from source
+  content: string;   // verbatim section body
+  level: number;     // 1 = top-level, 2 = subsection, 3 = minor
+};
 
 export type TranscriptPage = {
-  pageNumber: number;   // 1-indexed; for "docx": section number; for "reconstructed": block number
-  rawText: string;      // verbatim extracted text — no whitespace normalization
+  pageNumber: number;  // 1-indexed; for "reconstructed": section number
+  title: string;       // exact heading from source, or "Section N" if absent
+  content: string;     // full verbatim text of this page/section — no modifications
+  sections: TranscriptSection[];
   charCount: number;
-  isEmpty: boolean;     // true when <10 non-whitespace chars (cover pages, blanks)
-  ocrSource: boolean;   // true when this page was extracted via Claude vision OCR
+  isEmpty: boolean;    // true when <10 non-whitespace chars (cover pages, blanks)
+  ocrSource: boolean;  // true when extracted via Claude vision OCR
 };
 
 export type RawTranscript = {
@@ -450,6 +458,23 @@ export type RawTranscript = {
   pages: TranscriptPage[];
   extractedAt: number;  // unix ms
 };
+
+// ─── Transcript boundary detection schemas (Claude output for reconstruction) ─
+//
+// Claude identifies section start positions only — it does NOT reproduce content.
+// The server slices doc.text at identified positions to build verbatim pages.
+
+export const TranscriptBoundarySchema = z.object({
+  title: z.string(),       // exact title/heading text — copied char-for-char from source
+  startMarker: z.string(), // first 60 chars of section body (fallback locator if title not found)
+  level: z.number().int().min(1).max(3),
+});
+
+export const TranscriptBoundariesOutputSchema = z.object({
+  sections: z.array(TranscriptBoundarySchema).min(1),
+});
+
+export type TranscriptBoundary = z.infer<typeof TranscriptBoundarySchema>;
 
 // ─── Document ─────────────────────────────────────────────────────────────────
 

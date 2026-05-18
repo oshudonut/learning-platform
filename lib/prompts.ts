@@ -731,3 +731,33 @@ export function getRemediationConfig(
   const effectiveMethod = REMEDIATION_METHOD_OVERRIDE[method] ?? method;
   return getMethodologyConfig(effectiveMethod, studyMode);
 }
+
+// ─── Transcript extraction (Layer 0 — verbatim, no summarization) ─────────────
+//
+// These prompts are used ONLY for identifying structural section boundaries.
+// Claude does NOT reproduce verbatim content — the server slices doc.text at
+// identified positions so source content is always taken directly from the DB.
+//
+// This is intentionally separate from all reviewer prompts. No board-exam
+// framing, no summarization, no learning-method influence.
+
+export const TRANSCRIPT_SYSTEM_PREAMBLE = `You are a document structure analyzer. Your only task is to identify where sections begin in a document and what their titles are. You do not summarize content. You do not explain content. You do not reproduce full paragraphs. You only locate structural boundaries.`;
+
+export const TRANSCRIPT_TASK = `Identify the structural section boundaries of this document.
+
+For each distinct section, return:
+- "title": the EXACT heading or title text as it appears in the source — copy it character-for-character. If a section has no heading, derive a label of at most 8 words from its opening sentence.
+- "startMarker": copy the first 60 characters of the section BODY (the text immediately after the heading — not the heading itself) exactly as they appear in the source. This is used to locate the section start in the original text.
+- "level": 1 for top-level sections, 2 for subsections, 3 for minor subsections
+
+ABSOLUTE RULES — never break these:
+- Do NOT reproduce full section content
+- Do NOT summarize, describe, or explain any content
+- Do NOT skip sections — include every section you find
+- Do NOT merge adjacent sections into one
+- Copy title text CHARACTER-FOR-CHARACTER from the source — do not rephrase, capitalize, or abbreviate
+- If the document has no discernible section structure, return one entry using the document's first line as title
+- Return sections in source order (top to bottom)
+- startMarker must be taken verbatim from the body text — do not invent or paraphrase it
+
+Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble.`;
