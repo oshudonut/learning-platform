@@ -32,6 +32,78 @@ import {
   METHOD_SCHEMA_MAP,
 } from "./types";
 
+// ─── Source anchor collection and validation ─────────────────────────────────
+//
+// Extracts per-topic sourceAnchors from generated content, validates pageIds
+// against the transcript page set, and deduplicates.
+// Returns the cleaned anchor list + debug counts.
+// Generation is never blocked — an empty result is always valid.
+
+import type { SourceAnchor } from "./types";
+
+type AnchorCollection = {
+  anchors: SourceAnchor[];
+  invalidCount: number;         // anchors discarded due to unknown pageId
+  topicsMissingAnchors: number; // topics/drillSets that emitted no anchors
+};
+
+function collectAndValidateAnchors(
+  content: StudyTransformation["content"],
+  validPageIds: Set<string> | null,
+): AnchorCollection {
+  const raw: SourceAnchor[] = [];
+  let topicsMissingAnchors = 0;
+
+  // Reviewer-type families — have .topics[]
+  if ("topics" in content && Array.isArray(content.topics)) {
+    for (const topic of content.topics as Array<{ sourceAnchors?: SourceAnchor[] }>) {
+      if (topic.sourceAnchors && topic.sourceAnchors.length > 0) {
+        raw.push(...topic.sourceAnchors);
+      } else {
+        topicsMissingAnchors++;
+      }
+    }
+  }
+
+  // Rapid recall — has .drillSets[]; items may carry sourceAnchors if schema expands
+  if ("drillSets" in content && Array.isArray(content.drillSets)) {
+    for (const ds of content.drillSets as Array<{
+      sourceAnchors?: SourceAnchor[];
+      items?: Array<{ sourceAnchors?: SourceAnchor[] }>;
+    }>) {
+      const dsAnchors = ds.sourceAnchors ?? [];
+      const itemAnchors = (ds.items ?? []).flatMap((item) => item.sourceAnchors ?? []);
+      const combined = [...dsAnchors, ...itemAnchors];
+      if (combined.length > 0) {
+        raw.push(...combined);
+      } else {
+        topicsMissingAnchors++;
+      }
+    }
+  }
+
+  // Validate pageIds and deduplicate
+  let invalidCount = 0;
+  const seen = new Set<string>();
+  const anchors: SourceAnchor[] = [];
+
+  for (const anchor of raw) {
+    if (!anchor.pageId) continue;
+    const key = `${anchor.pageId}::${anchor.sectionId ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    if (validPageIds && !validPageIds.has(anchor.pageId)) {
+      invalidCount++;
+      console.warn(`[anchor] invalid pageId "${anchor.pageId}" discarded (not in transcript index)`);
+      continue;
+    }
+    anchors.push(anchor);
+  }
+
+  return { anchors, invalidCount, topicsMissingAnchors };
+}
+
 // ─── Transcript context builders ─────────────────────────────────────────────
 
 export function buildTranscriptContext(transcript: RawTranscript): string {
@@ -192,6 +264,26 @@ export async function generateTransformation(
     cacheWriteTokens,
   );
 
+  // Collect, validate, and deduplicate source anchors from generated content
+  const validPageIds = doc.transcript
+    ? new Set(doc.transcript.pages.map((p) => p.id))
+    : null;
+  const { anchors, invalidCount, topicsMissingAnchors } = collectAndValidateAnchors(
+    parsed as StudyTransformation["content"],
+    validPageIds,
+  );
+
+  // Debug logging — anchor emission quality per generation
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[anchor-debug]", {
+      transformationType,
+      anchorCount: anchors.length,
+      invalidCount,
+      topicsMissingAnchors,
+      fromTranscript: Boolean(doc.transcript),
+    });
+  }
+
   const transformation: StudyTransformation = {
     id: randomId(),
     documentId: doc.id,
@@ -209,8 +301,8 @@ export async function generateTransformation(
     cacheReadTokens,
     cacheWriteTokens,
     estimatedCostUsd,
-    sourceAnchors: [],
-    metadata: { fromTranscript: Boolean(doc.transcript) },
+    sourceAnchors: anchors,
+    metadata: { fromTranscript: Boolean(doc.transcript), anchorCount: anchors.length },
     content: parsed as StudyTransformation["content"],
     supersededBy: null,
     createdAt: startTime,

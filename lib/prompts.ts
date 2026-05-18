@@ -81,7 +81,8 @@ Return a JSON object with EXACTLY this structure:
         "A patient presents with [classic signs] — most likely diagnosis?",
         "Gold standard for diagnosing ___ is?",
         "First-line treatment for ___ is?"
-      ]
+      ],
+      "sourceAnchors": []
     }
   ],
   "globalMustMemorize": [
@@ -106,6 +107,7 @@ Hard constraints:
 - globalMustMemorize: 5–10 cross-topic high-yield facts — ALL labeled with a prefix; include cross-system thresholds and most-tested named criteria
 - mnemonics: 3–6 — spell acronyms letter-by-letter, write the actual rhyme text, or describe a vivid 1-sentence mental image; never write "use a mnemonic" without the actual device
 - summary: 1–2 sentences ONLY
+- sourceAnchors: populate per topic ONLY if a PAGE INDEX was provided in this prompt; omit or leave empty otherwise; never invent page IDs
 
 REFERENCE EXAMPLE — well-formed output for a clinical topic (Pulmonary Embolism):
 keyPoints:
@@ -219,7 +221,8 @@ Return a JSON object with EXACTLY this structure:
           "response": "the single shortest correct answer (1-5 words preferred)",
           "flag": "MUST_KNOW" | "HIGH_YIELD" | "STANDARD"
         }
-      ]
+      ],
+      "sourceAnchors": []
     }
   ]
 }
@@ -236,16 +239,34 @@ Hard constraints:
 - response: as short as possible; 1 word, a number, or a short phrase preferred
 - NO full sentences in cue or response
 - Use medical abbreviations where standard (HTN, DM, PE, MI, etc.)
+- sourceAnchors per drillSet: populate ONLY if a PAGE INDEX was provided; omit or leave empty otherwise; never invent page IDs
 
 Use exactly these field names.`;
 
 // ─── Source anchor instruction (injected into task when transcript exists) ────
+//
+// This is the ONLY place where sourceAnchors are requested.
+// It is appended to the task prompt only when a transcript page index is available.
+// Non-transcript documents never receive this instruction and must not emit anchors.
 
 export function buildAnchorInstruction(pageIndex: string): string {
-  return `\n\nPAGE INDEX (for sourceAnchors only — do NOT include full page content in your output):
+  return `\n\nPAGE INDEX — map topics to their source pages:
 ${pageIndex}
 
-For each topic's sourceAnchors field, include the pageId(s) from this index where you found the source material. Use the exact pageId string shown (e.g., "page_1"). Approximate mapping is acceptable.`;
+SOURCE ANCHOR RULES (mandatory — follow exactly):
+For every topic (or drillSet) in your output, populate its "sourceAnchors" field with the pages where that content was found.
+
+Anchor format:
+{ "pageId": "page_N", "sectionId": "page_N_section_M", "quotedText": "verbatim excerpt ≤60 chars" }
+
+Constraints:
+1. pageId MUST be an exact ID from the PAGE INDEX above (e.g. "page_2", "page_7") — copy it character-for-character
+2. NEVER invent or guess a pageId not listed in the PAGE INDEX above
+3. OMIT sourceAnchors entirely for a topic if you cannot identify the source page with confidence — an empty or missing sourceAnchors is always better than a wrong one
+4. sectionId is optional — include only if the content clearly came from a specific named section
+5. quotedText is optional — when included, it must be a short verbatim excerpt (≤60 chars) copied directly from the source, not paraphrased
+6. Multiple pages allowed — list every page that meaningfully contributed to the topic
+7. Omit, do not guess — accuracy over coverage`;
 }
 
 // ─── AI Tutor system prompt ───────────────────────────────────────────────────
@@ -406,7 +427,8 @@ Return EXACTLY this JSON (no extra fields, no markdown):
       "selfCheck": [
         "Can you explain ___ back in your own words?",
         "2-3 questions max"
-      ]
+      ],
+      "sourceAnchors": []
     }
   ],
   "bigPicture": "2 sentences — how the topics connect"
@@ -419,7 +441,8 @@ Hard constraints:
 - mechanism: 2-4 steps ONLY — one phrase per step, use → arrows
 - keyTakeaways: 3-4 short phrases — no full sentences
 - selfCheck: 2-3 questions ONLY
-- bigPicture: 2 sentences ONLY`;
+- bigPicture: 2 sentences ONLY
+- sourceAnchors: populate per topic ONLY if a PAGE INDEX was provided; omit or leave empty otherwise; never invent page IDs`;
 }
 
 function buildRetrievalTask(method: LearningMethod, mode: StudyMode): string {
@@ -457,7 +480,8 @@ Return EXACTLY this JSON (no extra fields, no markdown):
         }
       ],
       "keyFacts": ["Short phrase — testable fact", "3-4 items max"],
-      "commonMistakes": ["One real misconception", "1-2 items max"]
+      "commonMistakes": ["One real misconception", "1-2 items max"],
+      "sourceAnchors": []
     }
   ],
   "finalChallenge": [
@@ -472,7 +496,8 @@ Hard constraints:
 - answer: 1-2 sentences ONLY
 - keyFacts: 3-4 short phrases ONLY
 - commonMistakes: 1-2 items ONLY
-- finalChallenge: 3-4 questions ONLY`;
+- finalChallenge: 3-4 questions ONLY
+- sourceAnchors: populate per topic ONLY if a PAGE INDEX was provided; omit or leave empty otherwise; never invent page IDs`;
 }
 
 function buildMemoryTask(method: LearningMethod, mode: StudyMode): string {
@@ -514,7 +539,8 @@ Return EXACTLY this JSON (no extra fields, no markdown):
           "concept": "concept name",
           "trick": "The memorable hook, visual, or association — must be specific and vivid"
         }
-      ]
+      ],
+      "sourceAnchors": []
     }
   ],
   "masterAnchors": [
@@ -534,7 +560,8 @@ Hard constraints:
 - priority HIGH → reviewIn "tomorrow", MEDIUM → "3 days", LOW → "1 week"
 - associations: 1-2 per topic ONLY
 - masterAnchors: 4-5 ONLY — top cross-topic facts
-- Do NOT generate generic descriptions like "use a mnemonic" — generate the actual mnemonic`;
+- Do NOT generate generic descriptions like "use a mnemonic" — generate the actual mnemonic
+- sourceAnchors: populate per topic ONLY if a PAGE INDEX was provided; omit or leave empty otherwise; never invent page IDs`;
 }
 
 function buildRelationalTask(method: LearningMethod, mode: StudyMode): string {
@@ -580,7 +607,8 @@ Return EXACTLY this JSON (no extra fields, no markdown):
           "topic": "similar concept or term students confuse with this",
           "keyDifference": "The single most important distinction — one precise sentence"
         }
-      ]
+      ],
+      "sourceAnchors": []
     }
   ],
   "conceptMap": [
@@ -598,7 +626,8 @@ Hard constraints:
 - children: 1-2 items per node ONLY
 - crossLinks: 1-2 per topic ONLY — CROSS-TOPIC connections only
 - contrastsWith: 1-2 per topic ONLY — genuine confusion pairs only
-- conceptMap: 4-6 global connections ONLY`;
+- conceptMap: 4-6 global connections ONLY
+- sourceAnchors: populate per topic ONLY if a PAGE INDEX was provided; omit or leave empty otherwise; never invent page IDs`;
 }
 
 export function getMethodologyConfig(method: LearningMethod, mode: StudyMode): {
