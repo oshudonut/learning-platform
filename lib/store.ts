@@ -399,6 +399,35 @@ export async function recordFlashcardSession(
   await _updateAnalyticsMeta(userId, Math.ceil(session.cardsStudied * 0.5));
 }
 
+export type DocumentFlashcardStats = {
+  totalSessions: number;
+  totalCardsStudied: number;
+  avgQuality: number | null;
+  lastSessionAt: number | null;
+};
+
+export async function getDocumentFlashcardStats(
+  userId: string,
+  documentId: string,
+): Promise<DocumentFlashcardStats> {
+  const { data } = await supabase
+    .from("flashcard_sessions")
+    .select("cards_studied, avg_quality, completed_at")
+    .eq("user_id", userId)
+    .eq("document_id", documentId)
+    .order("completed_at", { ascending: false })
+    .limit(20);
+  const rows = (data ?? []) as Array<{ cards_studied: number; avg_quality: number; completed_at: number }>;
+  const totalCardsStudied = rows.reduce((s, r) => s + r.cards_studied, 0);
+  const raw = rows.length ? rows.reduce((s, r) => s + r.avg_quality, 0) / rows.length : null;
+  return {
+    totalSessions: rows.length,
+    totalCardsStudied,
+    avgQuality: raw !== null ? Math.round(raw * 10) / 10 : null,
+    lastSessionAt: rows[0]?.completed_at ?? null,
+  };
+}
+
 export async function getAnalytics(userId: string): Promise<Analytics> {
   const [quizRes, flashRes, metaRes] = await Promise.all([
     supabase

@@ -8,9 +8,11 @@ import {
   View,
   StyleSheet,
 } from "@react-pdf/renderer";
-import { getDocument, getProgression, getNotesByDocument, getHighlightsByDocument } from "@/lib/store";
+import { getDocument, getProgression, getNotesByDocument, getHighlightsByDocument, getDocumentFlashcardStats, getRecentQuizAttempts } from "@/lib/store";
+import { claude, HAIKU_MODEL } from "@/lib/claude";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import type { ReviewerNote, ReviewerHighlight } from "@/lib/store";
+import type { QuizAttempt } from "@/lib/types";
 import type {
   AnyReviewer,
   Reviewer,
@@ -671,9 +673,167 @@ function RelationalPDF({ reviewer }: { reviewer: RelationalReviewer }) {
   );
 }
 
+// ─── Phase 8F: Progress Snapshot + AI Summary ────────────────────────────────
+
+type PdfProgressSnapshot = {
+  completionPct: number;
+  completedSections: number;
+  totalSections: number;
+  lastQuizScore: number | null;
+  quizAttempts: number;
+  weakTopics: string[];
+  flashcardSessions: number;
+  totalCardsStudied: number;
+  masteredAt: number | null;
+  notesCount: number;
+};
+
+type PdfAISummary = {
+  weakAreas: string[];
+  examTraps: string[];
+  retentionReminders: string[];
+  suggestedFocus: string;
+};
+
+function ProgressSnapshotView({ snap }: { snap: PdfProgressSnapshot }) {
+  const quizColor = snap.lastQuizScore !== null && snap.lastQuizScore >= 95 ? C.green : C.muted;
+  return (
+    <View style={{ marginTop: 20, marginBottom: 10, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10 }}>
+      <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9, color: C.blue, letterSpacing: 1, marginBottom: 6 }}>
+        STUDY PROGRESS SNAPSHOT
+      </Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+        <Text style={{ fontSize: 9, color: C.muted }}>
+          <Text style={{ fontFamily: "Helvetica-Bold" }}>Completion: </Text>
+          {snap.totalSections > 0
+            ? `${snap.completionPct}% (${snap.completedSections}/${snap.totalSections})`
+            : "No sections tracked"}
+        </Text>
+        <Text style={{ fontSize: 9, color: quizColor }}>
+          <Text style={{ fontFamily: "Helvetica-Bold", color: C.muted }}>Quiz: </Text>
+          {snap.lastQuizScore !== null
+            ? `${snap.lastQuizScore}% — ${snap.lastQuizScore >= 95 ? "PASS ✓" : "FAIL"} (${snap.quizAttempts} attempt${snap.quizAttempts !== 1 ? "s" : ""})`
+            : "Not attempted"}
+        </Text>
+        {snap.totalCardsStudied > 0 && (
+          <Text style={{ fontSize: 9, color: C.muted }}>
+            <Text style={{ fontFamily: "Helvetica-Bold" }}>Flashcards: </Text>
+            {snap.totalCardsStudied} cards · {snap.flashcardSessions} sessions
+          </Text>
+        )}
+        {snap.masteredAt ? (
+          <Text style={{ fontSize: 9, color: C.green, fontFamily: "Helvetica-Bold" }}>MASTERED ✓</Text>
+        ) : null}
+        {snap.notesCount > 0 && (
+          <Text style={{ fontSize: 9, color: C.muted }}>
+            <Text style={{ fontFamily: "Helvetica-Bold" }}>Notes: </Text>
+            {snap.notesCount} topic{snap.notesCount !== 1 ? "s" : ""} annotated
+          </Text>
+        )}
+      </View>
+      {snap.weakTopics.length > 0 && (
+        <View style={{ marginTop: 6 }}>
+          <Text style={{ fontSize: 9, color: C.red, fontFamily: "Helvetica-Bold", marginBottom: 2 }}>Weak Topics:</Text>
+          {snap.weakTopics.slice(0, 4).map((wt, i) => (
+            <Text key={i} style={{ fontSize: 9, color: C.red, marginLeft: 8 }}>⚠ {wt}</Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function AISummaryView({ summary }: { summary: PdfAISummary }) {
+  const section = (title: string, items: string[], color: string) => {
+    if (!items.length) return null;
+    return (
+      <View style={{ marginBottom: 10 }}>
+        <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 10, color, marginBottom: 4 }}>{title}</Text>
+        {items.map((item, i) => (
+          <View key={i} style={{ flexDirection: "row", marginBottom: 2 }}>
+            <Text style={{ width: 10, fontSize: 9, color }}>•</Text>
+            <Text style={{ fontSize: 9, color: C.text, flex: 1, lineHeight: 1.4 }}>{item}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  return (
+    <View style={{ marginTop: 24, borderTopWidth: 2, borderTopColor: C.blue, paddingTop: 12 }}>
+      <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 13, color: C.blue, marginBottom: 12, letterSpacing: 0.5 }}>
+        AI STUDY COMPANION INSIGHTS
+      </Text>
+      {section("Weak Areas", summary.weakAreas, C.red)}
+      {section("Likely Exam Traps", summary.examTraps, C.gold)}
+      {section("Retention Reminders", summary.retentionReminders, C.blue)}
+      {summary.suggestedFocus ? (
+        <View style={{ marginBottom: 10 }}>
+          <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 10, color: C.green, marginBottom: 4 }}>Suggested Focus</Text>
+          <Text style={{ fontSize: 9, color: C.text, fontFamily: "Helvetica-Oblique", lineHeight: 1.4 }}>{summary.suggestedFocus}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// ── Phase 8F: AI summary generator ───────────────────────────────────────────
+
+async function generatePdfAISummary(
+  reviewerTitle: string,
+  topicTitles: string[],
+  notes: ReviewerNote[],
+  highlightCount: number,
+  attempts: QuizAttempt[],
+): Promise<PdfAISummary | null> {
+  try {
+    const last = attempts[0] ?? null;
+    const ctx = [
+      `REVIEWER: "${reviewerTitle}"`,
+      `TOPICS: ${topicTitles.slice(0, 8).join(", ")}`,
+      last
+        ? `QUIZ: ${last.score}% ${last.score >= 95 ? "(PASS)" : "(FAIL)"}` +
+          (last.weakTopics.length ? `\nWEAK TOPICS: ${last.weakTopics.slice(0, 5).join(", ")}` : "")
+        : "QUIZ: not attempted",
+      `NOTES: ${notes.filter(n => n.noteText.trim()).length} topics annotated`,
+      `HIGHLIGHTS: ${highlightCount} spans marked`,
+    ].join("\n");
+
+    const res = await claude.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 400,
+      system: "You are a board exam study coach. Return valid JSON only. No markdown.",
+      messages: [{
+        role: "user",
+        content: `${ctx}\n\nReturn study insights as JSON:\n{"weakAreas":["..."],"examTraps":["..."],"retentionReminders":["..."],"suggestedFocus":"..."}`,
+      }],
+    }, { signal: AbortSignal.timeout(15_000) });
+
+    const raw = res.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { type: "text"; text: string }).text)
+      .join("").trim()
+      .replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+
+    return JSON.parse(raw) as PdfAISummary;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Root PDF document ────────────────────────────────────────────────────────
 
-function ReviewerPDF({ reviewer, annotations }: { reviewer: AnyReviewer; annotations?: PdfAnnotations }) {
+function ReviewerPDF({
+  reviewer,
+  annotations,
+  progress,
+  aiSummary,
+}: {
+  reviewer: AnyReviewer;
+  annotations?: PdfAnnotations;
+  progress?: PdfProgressSnapshot;
+  aiSummary?: PdfAISummary;
+}) {
   return (
     <Document>
       <Page size="A4" style={s.page}>
@@ -689,6 +849,8 @@ function ReviewerPDF({ reviewer, annotations }: { reviewer: AnyReviewer; annotat
         ) : (
           <StandardPDF reviewer={reviewer as Reviewer} annotations={annotations} />
         )}
+        {progress && <ProgressSnapshotView snap={progress} />}
+        {aiSummary && <AISummaryView summary={aiSummary} />}
       </Page>
     </Document>
   );
@@ -733,21 +895,64 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "No reviewer generated yet." }, { status: 404 });
   }
 
-  // Fetch notes + highlights (non-blocking — fall back to no annotations on error)
+  // Fetch annotations + progress data (non-blocking — export works without any of these)
   let annotations: PdfAnnotations | undefined;
+  let progress: PdfProgressSnapshot | undefined;
+  let aiSummary: PdfAISummary | undefined;
+
   try {
-    const [notes, highlights] = await Promise.all([
+    const [notes, highlights, flashcard, recentAttempts] = await Promise.all([
       getNotesByDocument(id, user.id),
       getHighlightsByDocument(id, user.id),
+      getDocumentFlashcardStats(user.id, id).catch(() => null),
+      getRecentQuizAttempts(user.id, 20).catch(() => [] as QuizAttempt[]),
     ]);
+
     if (notes.length || highlights.length) {
       annotations = buildPdfAnnotations(notes, highlights);
     }
+
+    const sectionStatuses = progression.sectionStatuses ?? [];
+    const completedSections = sectionStatuses.filter((s) => s.completed).length;
+    const totalSections = sectionStatuses.length;
+    const docAttempts = recentAttempts.filter((a) => a.documentId === id);
+    const lastAttempt = docAttempts[0] ?? null;
+    const notesWithContent = notes.filter((n) => n.noteText.trim() || n.confusionLevel);
+
+    progress = {
+      completionPct: totalSections > 0 ? Math.round((completedSections / totalSections) * 100) : 0,
+      completedSections,
+      totalSections,
+      lastQuizScore: lastAttempt?.score ?? null,
+      quizAttempts: docAttempts.length,
+      weakTopics: lastAttempt?.weakTopics ?? [],
+      flashcardSessions: flashcard?.totalSessions ?? 0,
+      totalCardsStudied: flashcard?.totalCardsStudied ?? 0,
+      masteredAt: progression.masteredAt ?? null,
+      notesCount: notesWithContent.length,
+    };
+
+    // AI summary — non-blocking; omit from PDF if it fails or times out
+    const anyReviewer = doc.reviewer;
+    const topicTitles = "topics" in anyReviewer
+      ? (anyReviewer as { topics: Array<{ title: string }> }).topics.map((t) => t.title)
+      : [];
+
+    const raw = await generatePdfAISummary(
+      "title" in anyReviewer ? String(anyReviewer.title) : doc.title,
+      topicTitles,
+      notes,
+      highlights.filter((h) => !h.isStale).length,
+      docAttempts,
+    ).catch(() => null);
+    if (raw) aiSummary = raw;
   } catch {
-    // Annotations are non-critical — export still works without them
+    // Non-critical — export still renders without progress/AI sections
   }
 
-  const buffer = await renderToBuffer(<ReviewerPDF reviewer={doc.reviewer} annotations={annotations} />);
+  const buffer = await renderToBuffer(
+    <ReviewerPDF reviewer={doc.reviewer} annotations={annotations} progress={progress} aiSummary={aiSummary} />,
+  );
   const filename = `${doc.title.replace(/[^a-z0-9]/gi, "_").slice(0, 60)}_reviewer.pdf`;
 
   return new NextResponse(new Uint8Array(buffer), {
