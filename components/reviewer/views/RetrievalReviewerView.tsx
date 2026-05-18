@@ -16,8 +16,7 @@ import {
   ReviewerAllDoneScreen,
   useProgressionState,
 } from "../shared";
-import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
-import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
+import { WorkspacePanel } from "@/components/reviewer/WorkspacePanel";
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   active_recall: { label: "Active Recall", cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
@@ -179,7 +178,8 @@ export function RetrievalReviewerView({
   }
 
   return (
-    <div className="animate-fade-up">
+    <div className="animate-fade-up flex gap-4 items-start">
+      <div className="flex-1 min-w-0">
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", methodBadge.cls)}>
           {methodBadge.label}
@@ -292,22 +292,6 @@ export function RetrievalReviewerView({
             </div>
           )}
 
-          {documentId !== undefined && (
-            <ReviewerNotepad
-              documentId={documentId}
-              topicIndex={currentIdx}
-              initialNote={notes?.get(currentIdx) ?? null}
-              topic={{
-                title: topic.title,
-                coreIdea: topic.blurtPrompt,
-                keyPoints: topic.keyFacts,
-                mustMemorize: topic.questions.map((q) => q.q),
-                boardTips: topic.commonMistakes,
-              } satisfies NoteCoachTopic}
-              studyMode={studyMode ?? undefined}
-            />
-          )}
-
           <MarkCompleteButton
             isLast={currentIdx === total - 1}
             completing={completing}
@@ -321,6 +305,23 @@ export function RetrievalReviewerView({
           />
         </div>
       </SectionSlide>
+      </div>
+
+      {documentId !== undefined && (
+        <WorkspacePanel
+          documentId={documentId}
+          topicIndex={currentIdx}
+          initialNote={notes?.get(currentIdx) ?? null}
+          topic={{
+            title: topic.title,
+            coreIdea: topic.blurtPrompt,
+            keyPoints: topic.keyFacts,
+            mustMemorize: topic.questions.map((q) => q.q),
+            boardTips: topic.commonMistakes,
+          }}
+          studyMode={studyMode ?? undefined}
+        />
+      )}
     </div>
   );
 }

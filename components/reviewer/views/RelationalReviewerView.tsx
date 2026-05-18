@@ -13,8 +13,7 @@ import {
   ReviewerAllDoneScreen,
   useProgressionState,
 } from "../shared";
-import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
-import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
+import { WorkspacePanel } from "@/components/reviewer/WorkspacePanel";
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   mind_maps:    { label: "Mind Mapping",  cls: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" },
@@ -80,7 +79,8 @@ export function RelationalReviewerView({
   }
 
   return (
-    <div className="animate-fade-up">
+    <div className="animate-fade-up flex gap-4 items-start">
+      <div className="flex-1 min-w-0">
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", methodBadge.cls)}>
           {methodBadge.label}
@@ -218,22 +218,6 @@ export function RelationalReviewerView({
             </div>
           )}
 
-          {documentId !== undefined && (
-            <ReviewerNotepad
-              documentId={documentId}
-              topicIndex={currentIdx}
-              initialNote={notes?.get(currentIdx) ?? null}
-              topic={{
-                title: topic.title,
-                coreIdea: topic.centralConcept,
-                keyPoints: topic.nodes.map((n) => n.concept),
-                mustMemorize: topic.crossLinks.map((l) => `${l.from} → ${l.via} → ${l.to}`),
-                boardTips: topic.contrastsWith.map((c) => `vs ${c.topic}: ${c.keyDifference}`),
-              } satisfies NoteCoachTopic}
-              studyMode={studyMode ?? undefined}
-            />
-          )}
-
           <MarkCompleteButton
             isLast={currentIdx === total - 1}
             completing={completing}
@@ -247,6 +231,23 @@ export function RelationalReviewerView({
           />
         </div>
       </SectionSlide>
+      </div>
+
+      {documentId !== undefined && (
+        <WorkspacePanel
+          documentId={documentId}
+          topicIndex={currentIdx}
+          initialNote={notes?.get(currentIdx) ?? null}
+          topic={{
+            title: topic.title,
+            coreIdea: topic.centralConcept,
+            keyPoints: topic.nodes.map((n) => n.concept),
+            mustMemorize: topic.crossLinks.map((l) => `${l.from} → ${l.via} → ${l.to}`),
+            boardTips: topic.contrastsWith.map((c) => `vs ${c.topic}: ${c.keyDifference}`),
+          }}
+          studyMode={studyMode ?? undefined}
+        />
+      )}
     </div>
   );
 }

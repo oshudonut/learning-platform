@@ -32,6 +32,7 @@ import { RetrievalReviewerView } from "./views/RetrievalReviewerView";
 import { MemoryReviewerView } from "./views/MemoryReviewerView";
 import { RelationalReviewerView } from "./views/RelationalReviewerView";
 import { BoardExamTopicRenderer } from "./board-exam/BoardExamTopicRenderer";
+import { WorkspacePanel } from "./WorkspacePanel";
 import type { ReviewerHighlight } from "@/lib/store";
 
 const STUDY_MODE_BADGE: Record<StudyMode, { label: string; cls: string }> = {
@@ -445,123 +446,141 @@ export function ReviewerView({
   }
 
   return (
-    <div className="animate-fade-up">
-      {/* Method + mode badges */}
-      {(config || resolvedMode) && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {config && (
-            <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", config.accentClass)}>
-              {config.badge}
-            </span>
-          )}
-          {resolvedMode && (
-            <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", STUDY_MODE_BADGE[resolvedMode].cls)}>
-              {STUDY_MODE_BADGE[resolvedMode].label}
-            </span>
-          )}
-        </div>
-      )}
-
-      <SectionStepBar current={currentIdx} total={total} completedCount={completedCount} />
-
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentIdx}
-          initial={{ opacity: 0, x: 32 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -32 }}
-          transition={{ duration: 0.25, ease: "easeInOut" }}
-          className="space-y-6"
-        >
-          {/* Section header — flat academic style */}
-          <div className="pb-3 border-b border-muted-foreground/15">
-            <div className="flex items-start justify-between gap-3 mb-1.5">
-              <h3 className="font-extrabold text-red-600 dark:text-red-500 uppercase tracking-wide text-base leading-tight">
-                {currentIdx + 1}. {topic.title}
-              </h3>
-              <Badge variant="medium" className="flex-shrink-0">Active</Badge>
-            </div>
-            {config?.hint && (
-              <div className="mt-2 border-l-2 border-muted-foreground/20 pl-3">
-                <p className="text-xs text-muted-foreground italic">{config.hint}</p>
-              </div>
+    <div className="animate-fade-up flex gap-4 items-start">
+      {/* LEFT: all existing reviewer content */}
+      <div className="flex-1 min-w-0">
+        {/* Method + mode badges */}
+        {(config || resolvedMode) && (
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            {config && (
+              <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", config.accentClass)}>
+                {config.badge}
+              </span>
             )}
-            {config?.blurtChallenge && (
-              <div className="mt-2 border-l-2 border-orange-400/50 pl-3">
-                <p className="text-xs font-semibold text-orange-500 uppercase tracking-wider mb-0.5">Blurt Challenge</p>
-                <p className="text-xs text-muted-foreground">Close this screen for 60 seconds. Write or say everything you know about <strong>{topic.title}</strong>. Then come back and check.</p>
-              </div>
+            {resolvedMode && (
+              <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", STUDY_MODE_BADGE[resolvedMode].cls)}>
+                {STUDY_MODE_BADGE[resolvedMode].label}
+              </span>
             )}
           </div>
+        )}
 
-          {/* Topic content */}
-          <BoardExamTopicRenderer
-            topic={topic}
-            isLastSection={currentIdx === total - 1}
-            globalMustMemorize={standardReviewer.globalMustMemorize}
-            mnemonics={standardReviewer.mnemonics}
-            documentId={documentId}
-            topicIndex={currentIdx}
-            note={notes?.get(currentIdx) ?? null}
-            studyMode={resolvedMode ?? undefined}
-            highlights={highlights?.filter((h) => h.topicIndex === currentIdx)}
-            onHighlightCreated={onHighlightCreated}
-            onHighlightDeleted={onHighlightDeleted}
-          />
+        <SectionStepBar current={currentIdx} total={total} completedCount={completedCount} />
 
-          {/* Mark complete CTA */}
-          <Button
-            variant="accent"
-            className="w-full h-12 text-base"
-            onClick={handleMarkComplete}
-            disabled={completing}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentIdx}
+            initial={{ opacity: 0, x: 32 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -32 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+            className="space-y-6"
           >
-            {completing ? (
-              <>
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-                  className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white"
-                />
-                Saving…
-              </>
-            ) : currentIdx === total - 1 ? (
-              <>
-                <CheckCircle2 className="h-5 w-5" />
-                Complete Reviewer
-                <ChevronRight className="h-4 w-4" />
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="h-5 w-5" />
-                Mark Complete &amp; Continue
-                <ChevronRight className="h-4 w-4" />
-              </>
-            )}
-          </Button>
-
-          {/* Completed sections list (collapsed, subtle) */}
-          {completedCount > 0 && (
-            <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Completed ({completedCount})
-                </span>
+            {/* Section header — flat academic style */}
+            <div className="pb-3 border-b border-muted-foreground/15">
+              <div className="flex items-start justify-between gap-3 mb-1.5">
+                <h3 className="font-extrabold text-red-600 dark:text-red-500 uppercase tracking-wide text-base leading-tight">
+                  {currentIdx + 1}. {topic.title}
+                </h3>
+                <Badge variant="medium" className="flex-shrink-0">Active</Badge>
               </div>
-              <div className="space-y-1.5">
-                {standardReviewer.topics.slice(0, currentIdx).map((t, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <div className="h-1.5 w-1.5 rounded-full bg-success flex-shrink-0" />
-                    {t.title}
-                  </div>
-                ))}
-              </div>
+              {config?.hint && (
+                <div className="mt-2 border-l-2 border-muted-foreground/20 pl-3">
+                  <p className="text-xs text-muted-foreground italic">{config.hint}</p>
+                </div>
+              )}
+              {config?.blurtChallenge && (
+                <div className="mt-2 border-l-2 border-orange-400/50 pl-3">
+                  <p className="text-xs font-semibold text-orange-500 uppercase tracking-wider mb-0.5">Blurt Challenge</p>
+                  <p className="text-xs text-muted-foreground">Close this screen for 60 seconds. Write or say everything you know about <strong>{topic.title}</strong>. Then come back and check.</p>
+                </div>
+              )}
             </div>
-          )}
 
-        </motion.div>
-      </AnimatePresence>
+            {/* Topic content */}
+            <BoardExamTopicRenderer
+              topic={topic}
+              isLastSection={currentIdx === total - 1}
+              globalMustMemorize={standardReviewer.globalMustMemorize}
+              mnemonics={standardReviewer.mnemonics}
+              documentId={documentId}
+              topicIndex={currentIdx}
+              highlights={highlights?.filter((h) => h.topicIndex === currentIdx)}
+              onHighlightCreated={onHighlightCreated}
+              onHighlightDeleted={onHighlightDeleted}
+            />
+
+            {/* Mark complete CTA */}
+            <Button
+              variant="accent"
+              className="w-full h-12 text-base"
+              onClick={handleMarkComplete}
+              disabled={completing}
+            >
+              {completing ? (
+                <>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                    className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white"
+                  />
+                  Saving…
+                </>
+              ) : currentIdx === total - 1 ? (
+                <>
+                  <CheckCircle2 className="h-5 w-5" />
+                  Complete Reviewer
+                  <ChevronRight className="h-4 w-4" />
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-5 w-5" />
+                  Mark Complete &amp; Continue
+                  <ChevronRight className="h-4 w-4" />
+                </>
+              )}
+            </Button>
+
+            {/* Completed sections list (collapsed, subtle) */}
+            {completedCount > 0 && (
+              <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Completed ({completedCount})
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {standardReviewer.topics.slice(0, currentIdx).map((t, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="h-1.5 w-1.5 rounded-full bg-success flex-shrink-0" />
+                      {t.title}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* RIGHT: workspace panel */}
+      {documentId && (
+        <WorkspacePanel
+          documentId={documentId}
+          topicIndex={currentIdx}
+          initialNote={notes?.get(currentIdx) ?? null}
+          topic={{
+            title: topic.title,
+            coreIdea: topic.coreIdea,
+            keyPoints: topic.keyPoints,
+            mustMemorize: topic.mustMemorize,
+            boardTips: topic.boardTips,
+          }}
+          studyMode={resolvedMode ?? undefined}
+        />
+      )}
     </div>
   );
 }

@@ -125,7 +125,7 @@ function DiffView({ previousNote, currentNote }: { previousNote: string; current
 const coachCache = new Map<string, NoteCoachResult>();
 
 function cacheKey(text: string): string {
-  return text.trim().slice(0, 60);
+  return text.trim().slice(0, 500);
 }
 
 // ── Relative time ─────────────────────────────────────────────────────────────
@@ -140,8 +140,13 @@ function timeAgo(ts: number): string {
 
 // ── Section definitions ───────────────────────────────────────────────────────
 
+// Only the string-valued fields of NoteCoachResult can be displayed as section text
+type NoteCoachStringKey = {
+  [K in keyof NoteCoachResult]: NoteCoachResult[K] extends string | null ? K : never;
+}[keyof NoteCoachResult];
+
 type SectionDef = {
-  key: keyof NoteCoachResult;
+  key: NoteCoachStringKey;
   label: string;
   Icon: React.FC<{ className?: string }>;
   colorClass: string;
@@ -259,6 +264,7 @@ type NoteCoachProps = {
   noteText: string;
   topic: NoteCoachTopic;
   studyMode?: string;
+  confusionLevel?: number | null;
   onApplyRewrite?: (text: string) => void;
 };
 
@@ -267,7 +273,7 @@ const DEBOUNCE_MS = 1500;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCoachProps) {
+export function NoteCoach({ noteText, topic, studyMode, confusionLevel, onApplyRewrite }: NoteCoachProps) {
   const [state, setState] = useState<CoachState>({ status: "idle" });
   const [collapsed, setCollapsed] = useState(false);
   const [applied, setApplied] = useState(false);
@@ -334,6 +340,7 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
               boardTips: topic.boardTips,
             },
             studyMode,
+            confusionLevel,
           }),
           signal: ctrl.signal,
         });
@@ -404,6 +411,7 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
             boardTips: topic.boardTips,
           },
           studyMode,
+          confusionLevel,
         }),
         signal: ctrl.signal,
       });
@@ -425,7 +433,7 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
       if ((err as { name?: string }).name === "AbortError") return;
       if (isMounted.current) setState({ status: "error" });
     }
-  }, [noteText, state, topic, studyMode]);
+  }, [noteText, state, topic, studyMode, confusionLevel]);
 
   // ── Derived display ───────────────────────────────────────────────────────
 
@@ -450,6 +458,26 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
   if (state.status === "idle") return null;
   if (isDone && activeSections.length === 0 && !isRechecking) return null;
 
+  const ERROR_TYPE_BADGE: Record<string, { label: string; cls: string }> = {
+    factual_error:         { label: "Factual Error",         cls: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25" },
+    exam_trap_risk:        { label: "Exam Trap Risk",        cls: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25" },
+    incomplete:            { label: "Incomplete",            cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25" },
+    wording_confusion:     { label: "Wording Confusion",     cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25" },
+    memorization_weakness: { label: "Memorization Weakness", cls: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/25" },
+    mixed_concepts:        { label: "Mixed Concepts",        cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/25" },
+  };
+
+  const errorTypeBadge = displayResult?.errorType ? ERROR_TYPE_BADGE[displayResult.errorType] ?? null : null;
+
+  const qualityAvg = displayResult?.qualityScore
+    ? Math.round(
+        (displayResult.qualityScore.accuracy +
+          displayResult.qualityScore.clarity +
+          displayResult.qualityScore.completeness +
+          displayResult.qualityScore.examUsefulness) / 4 * 10
+      ) / 10
+    : null;
+
   return (
     <div className={cn(
       "mt-3 rounded-xl border overflow-hidden",
@@ -458,7 +486,7 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-primary/10">
         <Sparkles className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-        <span className="text-[11px] font-semibold text-primary flex-1 uppercase tracking-wider">
+        <span className="text-[11px] font-semibold text-primary uppercase tracking-wider">
           AI Study Coach
           {isDone && state.isRecheck && (
             <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 uppercase tracking-wide normal-case">
@@ -466,6 +494,18 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
             </span>
           )}
         </span>
+
+        {/* Error type badge */}
+        {errorTypeBadge && !isLoading && !isRechecking && (
+          <span className={cn(
+            "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide flex-shrink-0",
+            errorTypeBadge.cls,
+          )}>
+            {errorTypeBadge.label}
+          </span>
+        )}
+
+        <span className="flex-1" />
 
         {/* Timestamp */}
         {checkedAt && !isLoading && !isRechecking && (
@@ -497,6 +537,25 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
           </button>
         )}
       </div>
+
+      {/* Quality score — subtle one-liner, shown only when all 4 scores present */}
+      {qualityAvg !== null && !collapsed && !isLoading && !isRechecking && (
+        <div className="px-3 py-1 border-b border-primary/8 flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground/60">Overall:</span>
+          <span className="text-[10px] font-semibold text-muted-foreground/80">{qualityAvg}/5</span>
+          <div className="flex items-center gap-0.5">
+            {[1, 2, 3, 4, 5].map((dot) => (
+              <div
+                key={dot}
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  dot <= Math.round(qualityAvg) ? "bg-primary/60" : "bg-muted-foreground/20",
+                )}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Rechecking banner — shown on top of stale result */}
       {isRechecking && (

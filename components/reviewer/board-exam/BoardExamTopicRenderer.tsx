@@ -9,7 +9,6 @@ import { MnemonicCard } from "@/components/reviewer/primitives/MnemonicCard";
 import { SectionLabel } from "@/components/reviewer/primitives/SectionLabel";
 import { formatBoardText } from "@/components/reviewer/primitives/formatBoardText";
 import { HighlightableText } from "@/components/reviewer/primitives/HighlightableText";
-import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
 import { CompanionPanel, CompanionTriggerButton } from "@/components/reviewer/CompanionPanel";
 import type { CompanionTrigger } from "@/components/reviewer/CompanionPanel";
 import type { ReviewerTopic } from "@/lib/types";
@@ -22,8 +21,6 @@ interface BoardExamTopicRendererProps {
   mnemonics: { concept: string; aid: string }[];
   documentId?: string;
   topicIndex?: number;
-  note?: { noteText: string; confusionLevel: number | null } | null;
-  studyMode?: string;
   highlights?: ReviewerHighlight[];
   onHighlightCreated?: (h: ReviewerHighlight) => void;
   onHighlightDeleted?: (id: string) => void;
@@ -60,8 +57,6 @@ export function BoardExamTopicRenderer({
   mnemonics,
   documentId,
   topicIndex,
-  note,
-  studyMode,
   highlights = [],
   onHighlightCreated,
   onHighlightDeleted,
@@ -275,18 +270,6 @@ export function BoardExamTopicRenderer({
             />
           )}
         </div>
-      )}
-
-      {/* Notes — always rendered last, outside the section summaries */}
-      {documentId !== undefined && topicIndex !== undefined && (
-        <ReviewerNotepad
-          documentId={documentId}
-          topicIndex={topicIndex}
-          initialNote={note ?? null}
-          topic={companionTopic}
-          studyMode={studyMode}
-          onConfused={(noteText, confusionLevel) => handleOpenCompanion("confusion", noteText, confusionLevel)}
-        />
       )}
 
     </div>

@@ -13,8 +13,7 @@ import {
   ReviewerAllDoneScreen,
   useProgressionState,
 } from "../shared";
-import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
-import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
+import { WorkspacePanel } from "@/components/reviewer/WorkspacePanel";
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   feynman:      { label: "Feynman Technique", cls: "bg-violet-500/10 text-violet-400 border-violet-500/20" },
@@ -81,7 +80,8 @@ export function ConceptualReviewerView({
   }
 
   return (
-    <div className="animate-fade-up">
+    <div className="animate-fade-up flex gap-4 items-start">
+      <div className="flex-1 min-w-0">
       {/* Badges */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", methodBadge.cls)}>
@@ -195,22 +195,6 @@ export function ConceptualReviewerView({
             </div>
           )}
 
-          {documentId !== undefined && (
-            <ReviewerNotepad
-              documentId={documentId}
-              topicIndex={currentIdx}
-              initialNote={notes?.get(currentIdx) ?? null}
-              topic={{
-                title: topic.title,
-                coreIdea: topic.simplifiedExplanation,
-                keyPoints: topic.mechanism,
-                mustMemorize: topic.keyTakeaways,
-                boardTips: topic.selfCheck,
-              } satisfies NoteCoachTopic}
-              studyMode={studyMode ?? undefined}
-            />
-          )}
-
           <MarkCompleteButton
             isLast={currentIdx === total - 1}
             completing={completing}
@@ -224,6 +208,23 @@ export function ConceptualReviewerView({
           />
         </div>
       </SectionSlide>
+      </div>
+
+      {documentId !== undefined && (
+        <WorkspacePanel
+          documentId={documentId}
+          topicIndex={currentIdx}
+          initialNote={notes?.get(currentIdx) ?? null}
+          topic={{
+            title: topic.title,
+            coreIdea: topic.simplifiedExplanation,
+            keyPoints: topic.mechanism,
+            mustMemorize: topic.keyTakeaways,
+            boardTips: topic.selfCheck,
+          }}
+          studyMode={studyMode ?? undefined}
+        />
+      )}
     </div>
   );
 }

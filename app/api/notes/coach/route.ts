@@ -36,6 +36,9 @@ export type NoteCoachResult = {
   remainingWeakness: string | null;
   confidenceShift: string | null;
   nextLevelInsight: string | null;
+  // New enrichment fields
+  errorType: "factual_error" | "incomplete" | "wording_confusion" | "memorization_weakness" | "exam_trap_risk" | "mixed_concepts" | null;
+  qualityScore: { accuracy: number; clarity: number; completeness: number; examUsefulness: number } | null;
 };
 
 type TopicContent = {
@@ -67,6 +70,7 @@ function buildInitialPrompt(
   topicTitle: string,
   topic: TopicContent,
   studyMode?: string,
+  confusionLevel?: number | null,
 ): string {
   const kp = topic.keyPoints.slice(0, 4).map((p) => `• ${p.slice(0, 120)}`).join("\n");
   const mm = topic.mustMemorize.slice(0, 3).map((p) => `• ${p.slice(0, 100)}`).join("\n");
@@ -78,9 +82,17 @@ function buildInitialPrompt(
       ? "Prioritize the most essential corrections only."
       : "";
 
+  const confusionLine = confusionLevel !== null && confusionLevel !== undefined
+    ? `- Clarity self-rating: ${confusionLevel}/5 (1=clear, 5=very confused)`
+    : "";
+  const studyModeLine = studyMode ? `- Study mode: ${studyMode}` : "";
+  const studentContext = (confusionLine || studyModeLine)
+    ? `\nStudent context:\n${confusionLine ? confusionLine + "\n" : ""}${studyModeLine ? studyModeLine + "\n" : ""}`
+    : "";
+
   return `Topic: ${topicTitle}
 ${modeNote ? `\nContext: ${modeNote}` : ""}
-
+${studentContext}
 Reference Content:
 Core Idea: ${topic.coreIdea.slice(0, 200)}
 ${kp ? `Key Points:\n${kp}` : ""}
@@ -88,10 +100,12 @@ ${mm ? `Must Memorize:\n${mm}` : ""}
 ${tips ? `Board Tips:\n${tips}` : ""}
 
 Student's Note:
-"${noteText.slice(0, 400)}"
+"${noteText.slice(0, 3000)}"
 
 Analyze this note. Return only this JSON object:
 {
+  "errorType": <"factual_error"|"incomplete"|"wording_confusion"|"memorization_weakness"|"exam_trap_risk"|"mixed_concepts"|null>,
+  "qualityScore": {"accuracy": 1-5, "clarity": 1-5, "completeness": 1-5, "examUsefulness": 1-5} or null,
   "correction": <string or null>,
   "clarification": <string or null>,
   "suggestedRewrite": <string or null>,
@@ -128,6 +142,7 @@ function buildRecheckPrompt(
   topicTitle: string,
   topic: TopicContent,
   studyMode?: string,
+  confusionLevel?: number | null,
 ): string {
   const kp = topic.keyPoints.slice(0, 3).map((p) => `• ${p.slice(0, 100)}`).join("\n");
 
@@ -135,18 +150,26 @@ function buildRecheckPrompt(
     ? "Focus on board-exam precision and clinical accuracy."
     : "";
 
+  const confusionLine = confusionLevel !== null && confusionLevel !== undefined
+    ? `- Clarity self-rating: ${confusionLevel}/5 (1=clear, 5=very confused)`
+    : "";
+  const studyModeLine = studyMode ? `- Study mode: ${studyMode}` : "";
+  const studentContext = (confusionLine || studyModeLine)
+    ? `\nStudent context:\n${confusionLine ? confusionLine + "\n" : ""}${studyModeLine ? studyModeLine + "\n" : ""}`
+    : "";
+
   return `Topic: ${topicTitle}
 ${modeNote ? `\nContext: ${modeNote}` : ""}
-
+${studentContext}
 Reference Content:
 Core Idea: ${topic.coreIdea.slice(0, 180)}
 ${kp ? `Key Points:\n${kp}` : ""}
 
 Previous Note:
-"${previousNoteText.slice(0, 300)}"
+"${previousNoteText.slice(0, 2000)}"
 
 Updated Note:
-"${noteText.slice(0, 400)}"
+"${noteText.slice(0, 3000)}"
 
 Evaluate the improvement. Return only this JSON object:
 {
@@ -164,11 +187,42 @@ Evaluate the improvement. Return only this JSON object:
 
 // ── JSON parser ───────────────────────────────────────────────────────────────
 
+const ERROR_TYPE_VALUES = new Set([
+  "factual_error", "incomplete", "wording_confusion",
+  "memorization_weakness", "exam_trap_risk", "mixed_concepts",
+]);
+
 function parseResult(raw: string): NoteCoachResult | null {
   try {
     const cleaned = raw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
-    const parsed = JSON.parse(cleaned) as Partial<NoteCoachResult>;
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
     const str = (v: unknown) => (typeof v === "string" ? v : null);
+
+    // Validate errorType
+    const rawErrorType = parsed.errorType;
+    const errorType = (typeof rawErrorType === "string" && ERROR_TYPE_VALUES.has(rawErrorType))
+      ? (rawErrorType as NoteCoachResult["errorType"])
+      : null;
+
+    // Validate qualityScore — all 4 fields must be numbers 1-5
+    let qualityScore: NoteCoachResult["qualityScore"] = null;
+    const rawQS = parsed.qualityScore;
+    if (rawQS && typeof rawQS === "object" && !Array.isArray(rawQS)) {
+      const qs = rawQS as Record<string, unknown>;
+      const inRange = (v: unknown): v is number => typeof v === "number" && v >= 1 && v <= 5;
+      if (
+        inRange(qs.accuracy) && inRange(qs.clarity) &&
+        inRange(qs.completeness) && inRange(qs.examUsefulness)
+      ) {
+        qualityScore = {
+          accuracy: qs.accuracy,
+          clarity: qs.clarity,
+          completeness: qs.completeness,
+          examUsefulness: qs.examUsefulness,
+        };
+      }
+    }
+
     return {
       correction: str(parsed.correction),
       clarification: str(parsed.clarification),
@@ -179,6 +233,8 @@ function parseResult(raw: string): NoteCoachResult | null {
       remainingWeakness: str(parsed.remainingWeakness),
       confidenceShift: str(parsed.confidenceShift),
       nextLevelInsight: str(parsed.nextLevelInsight),
+      errorType,
+      qualityScore,
     };
   } catch {
     return null;
@@ -204,9 +260,10 @@ export async function POST(req: NextRequest) {
       topicTitle?: string;
       topicContent?: TopicContent;
       studyMode?: string;
+      confusionLevel?: number | null;
     };
 
-    const { noteText, previousNoteText, mode = "initial", topicTitle, topicContent, studyMode } = body;
+    const { noteText, previousNoteText, mode = "initial", topicTitle, topicContent, studyMode, confusionLevel } = body;
 
     if (!noteText?.trim() || !topicTitle || !topicContent) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -219,8 +276,8 @@ export async function POST(req: NextRequest) {
     const isRecheck = mode === "recheck" && previousNoteText?.trim();
 
     const [system, prompt, maxTokens] = isRecheck
-      ? [RECHECK_SYSTEM, buildRecheckPrompt(previousNoteText!, noteText, topicTitle, topicContent, studyMode), 900]
-      : [INITIAL_SYSTEM, buildInitialPrompt(noteText, topicTitle, topicContent, studyMode), 700];
+      ? [RECHECK_SYSTEM, buildRecheckPrompt(previousNoteText!, noteText, topicTitle, topicContent, studyMode, confusionLevel), 1100]
+      : [INITIAL_SYSTEM, buildInitialPrompt(noteText, topicTitle, topicContent, studyMode, confusionLevel), 900];
 
     const response = await claude.messages.create({
       model: HAIKU_MODEL,
