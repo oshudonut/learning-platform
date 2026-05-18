@@ -458,6 +458,16 @@ export type ExtendedQuiz = {
 
 // ── Transcript status / extraction method enums ───────────────────────────────
 
+// Document-level processing state machine — persisted as a DB column so it
+// survives refresh and is queue-compatible. Distinct from TranscriptStatus
+// (transcript-internal quality flag) and from DocumentProgression.
+export type TranscriptProcessingStatus =
+  | "none"        // transcript has never been attempted
+  | "queued"      // enqueued for async generation (future)
+  | "processing"  // generation actively in progress (future async use)
+  | "completed"   // transcript exists and is usable
+  | "failed";     // generation failed with no recoverable content
+
 export type TranscriptStatus = "pending" | "processing" | "completed" | "failed";
 
 export type TranscriptExtractionMethod =
@@ -551,8 +561,11 @@ export type Document = {
   userId?: string | null;
   folderId?: string | null;
   workspaceId?: string | null;
-  transcript?: RawTranscript;  // Layer 0 — immutable verbatim source; absent on pre-Phase-3 docs
-  reviewer?: AnyReviewer;      // Layer 2 — derived transform; generated on user request
+  transcript?: RawTranscript;        // Layer 0 — immutable verbatim source; absent on pre-Phase-3 docs
+  transcriptStatus?: TranscriptProcessingStatus; // document-level state machine; defaults to "none"
+  lastAttemptAt?: number | null;     // epoch ms of last generation attempt; null if never attempted
+  retryCount?: number;               // queue retry counter; managed by workers, not service functions
+  reviewer?: AnyReviewer;            // Layer 2 — derived transform; generated on user request
   quiz?: Quiz;
   flashcards?: Flashcard[];
   flashcardReviewStates?: FlashcardReviewState[];

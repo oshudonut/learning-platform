@@ -252,7 +252,10 @@ export async function generateTranscriptForDocument(
       },
       { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
     );
-    await updateTranscript(doc.id, userId, transcript);
+    await updateTranscript(doc.id, userId, transcript, {
+      transcriptStatus: "completed",
+      lastAttemptAt: startTime,
+    });
     return { transcript, fromCache: false };
   }
 
@@ -320,6 +323,9 @@ export async function generateTranscriptForDocument(
     { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens },
   );
 
-  await updateTranscript(doc.id, userId, transcript);
+  await updateTranscript(doc.id, userId, transcript, {
+    transcriptStatus: "completed",
+    lastAttemptAt: startTime,
+  });
   return { transcript, fromCache: false };
 }

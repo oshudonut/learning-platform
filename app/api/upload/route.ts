@@ -206,6 +206,9 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       folderId: folderId ?? null,
       transcript: transcriptForSave,
+      transcriptStatus: transcriptForSave ? "completed" : "none",
+      lastAttemptAt: transcriptForSave ? Date.now() : null,
+      retryCount: 0,
     });
 
     await saveChunks(id, user.id, chunks);

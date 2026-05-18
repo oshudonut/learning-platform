@@ -28,6 +28,7 @@ import type {
   Folder,
   AnyReviewer,
   RawTranscript,
+  TranscriptProcessingStatus,
   StudyPlan,
   StudyPlanDocument,
   StudyPlanItem,
@@ -51,6 +52,9 @@ function toRow(doc: Document) {
     user_id: doc.userId ?? null,
     folder_id: doc.folderId ?? null,
     transcript: doc.transcript ?? null,
+    transcript_status: doc.transcriptStatus ?? "none",
+    last_attempt_at: doc.lastAttemptAt ?? null,
+    retry_count: doc.retryCount ?? 0,
     reviewer: doc.reviewer ?? null,
     quiz: doc.quiz ?? null,
     flashcards: doc.flashcards ?? null,
@@ -71,6 +75,10 @@ function fromRow(row: Record<string, unknown>): Document {
     userId: (row.user_id as string | null) ?? null,
     folderId: (row.folder_id as string | null) ?? null,
     transcript: (row.transcript as RawTranscript | null) ?? undefined,
+    // Safe defaults for pre-migration rows that return null for new columns.
+    transcriptStatus: ((row.transcript_status as TranscriptProcessingStatus | null) ?? "none"),
+    lastAttemptAt: (row.last_attempt_at as number | null) ?? null,
+    retryCount: (row.retry_count as number | null) ?? 0,
     reviewer: (row.reviewer as Document["reviewer"]) ?? undefined,
     quiz: (row.quiz as Document["quiz"]) ?? undefined,
     flashcards: (row.flashcards as Document["flashcards"]) ?? undefined,
@@ -155,13 +163,43 @@ export async function updateTranscript(
   id: string,
   userId: string,
   transcript: RawTranscript,
+  statusUpdate?: {
+    transcriptStatus?: TranscriptProcessingStatus;
+    lastAttemptAt?: number;
+  },
 ): Promise<void> {
+  const extra: Record<string, unknown> = {};
+  if (statusUpdate?.transcriptStatus !== undefined) {
+    extra.transcript_status = statusUpdate.transcriptStatus;
+  }
+  if (statusUpdate?.lastAttemptAt !== undefined) {
+    extra.last_attempt_at = statusUpdate.lastAttemptAt;
+  }
   const { error } = await supabase
     .from("documents")
-    .update({ transcript })
+    .update({ transcript, ...extra })
     .eq("id", id)
     .eq("user_id", userId);
   if (error) throw new Error(`updateTranscript: ${error.message}`);
+}
+
+// Standalone status update — used by queue workers to set "queued" / "processing"
+// before content is available, or "failed" when all retries are exhausted.
+export async function updateTranscriptStatus(
+  id: string,
+  userId: string,
+  status: TranscriptProcessingStatus,
+  extras?: { lastAttemptAt?: number; retryCount?: number },
+): Promise<void> {
+  const patch: Record<string, unknown> = { transcript_status: status };
+  if (extras?.lastAttemptAt !== undefined) patch.last_attempt_at = extras.lastAttemptAt;
+  if (extras?.retryCount !== undefined) patch.retry_count = extras.retryCount;
+  const { error } = await supabase
+    .from("documents")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw new Error(`updateTranscriptStatus: ${error.message}`);
 }
 
 export async function deleteDocument(id: string, userId: string): Promise<void> {
