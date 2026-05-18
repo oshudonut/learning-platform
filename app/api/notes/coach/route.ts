@@ -25,11 +25,17 @@ function isRateLimited(userId: string): boolean {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type NoteCoachResult = {
+  // Initial analysis fields
   correction: string | null;
   clarification: string | null;
   suggestedRewrite: string | null;
   examTip: string | null;
   retentionHook: string | null;
+  // Recheck-only comparison fields
+  improvementDetected: string | null;
+  remainingWeakness: string | null;
+  confidenceShift: string | null;
+  nextLevelInsight: string | null;
 };
 
 type TopicContent = {
@@ -39,9 +45,9 @@ type TopicContent = {
   boardTips: string[];
 };
 
-// ── System prompt ─────────────────────────────────────────────────────────────
+// ── Initial analysis ──────────────────────────────────────────────────────────
 
-const SYSTEM = `You are a board-exam study coach analyzing a student's handwritten note.
+const INITIAL_SYSTEM = `You are a board-exam study coach analyzing a student's handwritten note.
 
 Your job:
 - Compare the note against the reference topic content
@@ -56,9 +62,7 @@ Rules:
 - If a field is not applicable, return null
 - Return ONLY valid JSON — no explanation, no markdown fences`;
 
-// ── Prompt builder ────────────────────────────────────────────────────────────
-
-function buildPrompt(
+function buildInitialPrompt(
   noteText: string,
   topicTitle: string,
   topic: TopicContent,
@@ -92,8 +96,93 @@ Analyze this note. Return only this JSON object:
   "clarification": <string or null>,
   "suggestedRewrite": <string or null>,
   "examTip": <string or null>,
+  "retentionHook": <string or null>,
+  "improvementDetected": null,
+  "remainingWeakness": null,
+  "confidenceShift": null,
+  "nextLevelInsight": null
+}`;
+}
+
+// ── Recheck (comparison) analysis ─────────────────────────────────────────────
+
+const RECHECK_SYSTEM = `You are a board-exam study coach evaluating whether a student's understanding improved after revision.
+
+Your job:
+- Compare the PREVIOUS note to the UPDATED note
+- Evaluate conceptual improvement, not just wording changes
+- Be specific: what got better, what still needs work
+- Act like a tutor reviewing a resubmission, not a grammar checker running again
+
+Rules:
+- Ground all feedback in the reference topic content — never invent facts
+- Be honest: if understanding did NOT improve, say so clearly but constructively
+- Be encouraging and precise
+- Each field: 1–2 sentences max
+- If a field is not applicable, return null
+- Return ONLY valid JSON — no explanation, no markdown fences`;
+
+function buildRecheckPrompt(
+  previousNoteText: string,
+  noteText: string,
+  topicTitle: string,
+  topic: TopicContent,
+  studyMode?: string,
+): string {
+  const kp = topic.keyPoints.slice(0, 3).map((p) => `• ${p.slice(0, 100)}`).join("\n");
+
+  const modeNote = studyMode === "board_exam"
+    ? "Focus on board-exam precision and clinical accuracy."
+    : "";
+
+  return `Topic: ${topicTitle}
+${modeNote ? `\nContext: ${modeNote}` : ""}
+
+Reference Content:
+Core Idea: ${topic.coreIdea.slice(0, 180)}
+${kp ? `Key Points:\n${kp}` : ""}
+
+Previous Note:
+"${previousNoteText.slice(0, 300)}"
+
+Updated Note:
+"${noteText.slice(0, 400)}"
+
+Evaluate the improvement. Return only this JSON object:
+{
+  "improvementDetected": <string or null — what specific understanding or phrasing improved>,
+  "remainingWeakness": <string or null — what misconception or gap still exists in the updated note>,
+  "confidenceShift": <string or null — one-line summary of how readiness changed, e.g. "confused → mostly clear">,
+  "nextLevelInsight": <string or null — board-exam depth the student should aim for next>,
+  "correction": <string or null — any remaining factual errors in the updated note>,
+  "clarification": <string or null — key concept that still needs deeper understanding>,
+  "suggestedRewrite": <string or null — final board-style phrasing if still imprecise>,
+  "examTip": <string or null>,
   "retentionHook": <string or null>
 }`;
+}
+
+// ── JSON parser ───────────────────────────────────────────────────────────────
+
+function parseResult(raw: string): NoteCoachResult | null {
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+    const parsed = JSON.parse(cleaned) as Partial<NoteCoachResult>;
+    const str = (v: unknown) => (typeof v === "string" ? v : null);
+    return {
+      correction: str(parsed.correction),
+      clarification: str(parsed.clarification),
+      suggestedRewrite: str(parsed.suggestedRewrite),
+      examTip: str(parsed.examTip),
+      retentionHook: str(parsed.retentionHook),
+      improvementDetected: str(parsed.improvementDetected),
+      remainingWeakness: str(parsed.remainingWeakness),
+      confidenceShift: str(parsed.confidenceShift),
+      nextLevelInsight: str(parsed.nextLevelInsight),
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -110,12 +199,14 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json() as {
       noteText?: string;
+      previousNoteText?: string;
+      mode?: "initial" | "recheck";
       topicTitle?: string;
       topicContent?: TopicContent;
       studyMode?: string;
     };
 
-    const { noteText, topicTitle, topicContent, studyMode } = body;
+    const { noteText, previousNoteText, mode = "initial", topicTitle, topicContent, studyMode } = body;
 
     if (!noteText?.trim() || !topicTitle || !topicContent) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -125,30 +216,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ result: null }, { status: 200 });
     }
 
-    const prompt = buildPrompt(noteText, topicTitle, topicContent, studyMode);
+    const isRecheck = mode === "recheck" && previousNoteText?.trim();
+
+    const [system, prompt, maxTokens] = isRecheck
+      ? [RECHECK_SYSTEM, buildRecheckPrompt(previousNoteText!, noteText, topicTitle, topicContent, studyMode), 900]
+      : [INITIAL_SYSTEM, buildInitialPrompt(noteText, topicTitle, topicContent, studyMode), 700];
 
     const response = await claude.messages.create({
       model: HAIKU_MODEL,
-      max_tokens: 700,
-      system: SYSTEM,
+      max_tokens: maxTokens,
+      system,
       messages: [{ role: "user", content: prompt }],
     }, { signal: AbortSignal.timeout(15_000) });
 
-    const raw = response.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("").trim();
+    const raw = response.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { type: "text"; text: string }).text)
+      .join("")
+      .trim();
 
-    let result: NoteCoachResult;
-    try {
-      // Strip possible code fences the model might sneak in
-      const cleaned = raw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
-      const parsed = JSON.parse(cleaned) as Partial<NoteCoachResult>;
-      result = {
-        correction: typeof parsed.correction === "string" ? parsed.correction : null,
-        clarification: typeof parsed.clarification === "string" ? parsed.clarification : null,
-        suggestedRewrite: typeof parsed.suggestedRewrite === "string" ? parsed.suggestedRewrite : null,
-        examTip: typeof parsed.examTip === "string" ? parsed.examTip : null,
-        retentionHook: typeof parsed.retentionHook === "string" ? parsed.retentionHook : null,
-      };
-    } catch {
+    const result = parseResult(raw);
+    if (!result) {
       console.error("[notes/coach] JSON parse failed:", raw.slice(0, 200));
       return NextResponse.json({ result: null }, { status: 200 });
     }
