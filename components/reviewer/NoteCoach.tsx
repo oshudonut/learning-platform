@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertOctagon,
   AlertTriangle,
+  ArrowLeftRight,
   ArrowUpRight,
   BookOpen,
   Brain,
@@ -22,6 +23,103 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NoteCoachResult } from "@/app/api/notes/coach/route";
+
+// ── Word-level LCS diff ───────────────────────────────────────────────────────
+
+type DiffToken = { type: "equal" | "insert" | "delete"; value: string };
+
+function wordDiff(oldText: string, newText: string): DiffToken[] {
+  const a = oldText.trim().split(/\s+/).filter(Boolean);
+  const b = newText.trim().split(/\s+/).filter(Boolean);
+  const m = a.length, n = b.length;
+
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0) as number[]);
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+
+  const tokens: DiffToken[] = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      tokens.unshift({ type: "equal", value: a[i - 1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      tokens.unshift({ type: "insert", value: b[j - 1] });
+      j--;
+    } else {
+      tokens.unshift({ type: "delete", value: a[i - 1] });
+      i--;
+    }
+  }
+  return tokens;
+}
+
+function DiffView({ previousNote, currentNote }: { previousNote: string; currentNote: string }) {
+  const tokens = wordDiff(previousNote, currentNote);
+  const oldTokens = tokens.filter((t) => t.type !== "insert");
+  const newTokens = tokens.filter((t) => t.type !== "delete");
+
+  const equalCount = tokens.filter((t) => t.type === "equal").length;
+  const changeCount = tokens.filter((t) => t.type !== "equal").length;
+  const pctChanged = tokens.length > 0 ? Math.round((changeCount / tokens.length) * 100) : 0;
+
+  return (
+    <div className="px-3 py-2.5 bg-muted/30 border-b border-primary/8">
+      <div className="flex items-center gap-1.5 mb-2">
+        <ArrowLeftRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex-1">
+          What Changed
+        </span>
+        <span className="text-[9px] text-muted-foreground/60 tabular-nums">
+          {equalCount} unchanged · {changeCount} changed ({pctChanged}%)
+        </span>
+      </div>
+      <div className="space-y-2">
+        {/* Before row */}
+        <div className="flex gap-2 items-baseline">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 w-10 flex-shrink-0 pt-px">
+            Before
+          </span>
+          <p className="text-[11px] leading-relaxed text-foreground/55 flex-1 flex flex-wrap gap-x-0.5">
+            {oldTokens.map((t, i) =>
+              t.type === "delete" ? (
+                <mark
+                  key={i}
+                  className="bg-red-500/18 text-red-600 dark:text-red-400 line-through rounded px-0.5 not-italic"
+                >
+                  {t.value}
+                </mark>
+              ) : (
+                <span key={i}>{t.value}</span>
+              ),
+            )}
+          </p>
+        </div>
+        {/* After row */}
+        <div className="flex gap-2 items-baseline">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-primary/70 w-10 flex-shrink-0 pt-px">
+            After
+          </span>
+          <p className="text-[11px] leading-relaxed text-foreground/85 flex-1 flex flex-wrap gap-x-0.5">
+            {newTokens.map((t, i) =>
+              t.type === "insert" ? (
+                <mark
+                  key={i}
+                  className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded px-0.5 not-italic"
+                >
+                  {t.value}
+                </mark>
+              ) : (
+                <span key={i}>{t.value}</span>
+              ),
+            )}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Client-side cache (initial analyses only — rechecks are never cached) ────
 const coachCache = new Map<string, NoteCoachResult>();
@@ -135,6 +233,8 @@ type DoneState = {
   result: NoteCoachResult;
   checkedAt: number;
   isRecheck: boolean;
+  previousNote?: string;
+  currentNote?: string;
 };
 
 type CoachState =
@@ -319,7 +419,7 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
       if (!data.result) { setState({ status: "error" }); return; }
 
       lastAnalyzedNoteRef.current = current;
-      setState({ status: "done", result: data.result, checkedAt: Date.now(), isRecheck: true });
+      setState({ status: "done", result: data.result, checkedAt: Date.now(), isRecheck: true, previousNote: previous, currentNote: current });
       setCollapsed(false);
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
@@ -428,6 +528,10 @@ export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCo
       {/* Sections */}
       {displayResult && !collapsed && activeSections.length > 0 && (
         <div className={cn("divide-y divide-primary/8", isRechecking && "opacity-50 pointer-events-none")}>
+          {/* Visual diff — shown at top when recheck has note snapshots */}
+          {isDone && state.isRecheck && state.previousNote && state.currentNote && (
+            <DiffView previousNote={state.previousNote} currentNote={state.currentNote} />
+          )}
           {activeSections.map(({ key, label, Icon, colorClass, bgClass, recheckOnly }) => (
             <div
               key={key}
