@@ -225,7 +225,9 @@ export function serializePlannerContext(ctx: PlannerContext): string {
   );
   lines.push("", `RECENT ACTIVITY: ~${avgDailyMins}m/day avg (last 7 days, ${recentCompleted.length} tasks completed)`);
 
-  return lines.join("\n");
+  const result = lines.join("\n");
+  // Hard cap: keep context within ~1 000 tokens to control cost
+  return result.length > 4000 ? result.slice(0, 4000) + "\n[context truncated]" : result;
 }
 
 // ─── AI analysis ──────────────────────────────────────────────────────────────
@@ -282,7 +284,7 @@ export async function analyzePlannerContext(ctx: PlannerContext): Promise<Planne
     messages: [
       { role: "user", content: TASK_INSTRUCTION(contextSummary) },
     ],
-  });
+  }, { signal: AbortSignal.timeout(30_000) });
 
   const raw = response.content
     .filter((b) => b.type === "text")
@@ -375,7 +377,7 @@ Prefer descriptive changes[] over rescheduleUpdates[] when you lack specific ite
       "Return valid JSON only. No markdown, no explanation outside the JSON.",
     ].join("\n"),
     messages: [{ role: "user", content: task }],
-  });
+  }, { signal: AbortSignal.timeout(45_000) });
 
   const raw = response.content
     .filter((b) => b.type === "text")

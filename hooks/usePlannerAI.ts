@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { PlannerAnalysis } from "@/lib/plannerAI";
 import type { OptimizationPlan } from "@/lib/plannerAI";
 
@@ -31,8 +31,12 @@ export function usePlannerAI(planId: string | null) {
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
 
   const lastAnalyzedAt = useRef<number>(0);
+  const chatAbortRef = useRef<AbortController | null>(null);
 
-  // ── analyze ────────────────────────────────────────────────────────────────
+  // Abort any in-flight chat on unmount
+  useEffect(() => () => { chatAbortRef.current?.abort(); }, []);
+
+  // ── analyze (stale-while-revalidate) ───────────────────────────────────────
 
   const analyze = useCallback(async (force = false) => {
     if (!planId) return;
@@ -40,17 +44,16 @@ export function usePlannerAI(planId: string | null) {
     // Debounce guard
     if (!force && Date.now() - lastAnalyzedAt.current < DEBOUNCE_MS) return;
 
-    // Cache hit
-    if (!force) {
-      const cached = analysisCache.get(planId);
-      if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
-        setAnalysis(cached.analysis);
-        return;
-      }
+    // Serve stale data immediately so the UI never goes blank
+    const cached = analysisCache.get(planId);
+    if (cached) {
+      setAnalysis(cached.analysis);
+      if (!force && Date.now() - cached.cachedAt < CACHE_TTL_MS) return; // still fresh
+      // Stale — fall through to background revalidate (no spinner since we served stale)
     }
 
     lastAnalyzedAt.current = Date.now();
-    setAnalyzeLoading(true);
+    if (!cached) setAnalyzeLoading(true); // only show spinner on cold load
     setAnalyzeError(null);
 
     try {
@@ -113,11 +116,18 @@ export function usePlannerAI(planId: string | null) {
   ) => {
     if (!planId) return;
 
+    // Cancel any in-flight request before starting a new one
+    chatAbortRef.current?.abort();
+    const controller = new AbortController();
+    chatAbortRef.current = controller;
+
     try {
       const res = await fetch("/api/planner/ai", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "chat", planId, messages }),
+        // Server also caps at 16, but trim here too to save bandwidth
+        body: JSON.stringify({ action: "chat", planId, messages: messages.slice(-16) }),
+        signal: controller.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -151,6 +161,7 @@ export function usePlannerAI(planId: string | null) {
 
       onDone();
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return; // intentional cancel
       onError(err instanceof Error ? err.message : "Chat failed");
     }
   }, [planId]);

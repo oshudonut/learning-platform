@@ -13,6 +13,25 @@ import { claude, HAIKU_MODEL } from "@/lib/claude";
 
 type Action = "analyze" | "chat" | "briefing" | "optimize";
 
+// ─── Rate limiter (in-memory, per serverless instance) ────────────────────────
+// Provides burst protection within a single instance; not distributed across
+// instances, but sufficient to prevent accidental client-side loops.
+const RL_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const RL_MAX = 20;                   // max AI calls per user per window
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(userId);
+  if (!entry || now - entry.windowStart > RL_WINDOW_MS) {
+    rateLimitMap.set(userId, { count: 1, windowStart: now });
+    return false;
+  }
+  if (entry.count >= RL_MAX) return true;
+  entry.count++;
+  return false;
+}
+
 // POST /api/planner/ai
 // Body: { action: Action, planId: string, messages?: ChatMessage[] }
 export async function POST(req: NextRequest) {
@@ -30,6 +49,13 @@ export async function POST(req: NextRequest) {
     const { action, planId } = body;
     if (!action) return NextResponse.json({ error: "action is required" }, { status: 400 });
     if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
+
+    if (isRateLimited(user.id)) {
+      return NextResponse.json(
+        { error: "Too many AI requests. Please wait a few minutes." },
+        { status: 429, headers: { "Retry-After": "300" } },
+      );
+    }
 
     const ctx = await buildPlannerContext(planId, user.id);
     if (!ctx) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
@@ -54,7 +80,8 @@ export async function POST(req: NextRequest) {
 
     // ── chat (streaming SSE) ─────────────────────────────────────────────────
     if (action === "chat") {
-      const history = body.messages ?? [];
+      // Cap at last 16 messages (8 turns) to bound token usage
+      const history = (body.messages ?? []).slice(-16);
       if (history.length === 0 || history[history.length - 1]?.role !== "user") {
         return NextResponse.json({ error: "messages must end with a user turn" }, { status: 400 });
       }
@@ -103,6 +130,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return NextResponse.json({ error: "AI request timed out" }, { status: 504 });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

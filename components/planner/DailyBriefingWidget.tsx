@@ -170,6 +170,22 @@ function BriefingContent({
   );
 }
 
+// ─── Error fallback ───────────────────────────────────────────────────────────
+
+function BriefingError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card px-5 py-3 flex items-center justify-between">
+      <p className="text-xs text-muted-foreground">Daily brief unavailable</p>
+      <button
+        onClick={onRetry}
+        className="text-xs text-primary hover:opacity-80 transition-opacity"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 type Props = {
@@ -178,14 +194,17 @@ type Props = {
 };
 
 export function DailyBriefingWidget({ planId, planTitle }: Props) {
-  const { analysis, analyzeLoading, analyze } = usePlannerAI(planId);
+  const { analysis, analyzeLoading, analyzeError, analyze } = usePlannerAI(planId);
 
   useEffect(() => {
     void analyze();
   }, [analyze]);
 
   if (analyzeLoading && !analysis) return <Skeleton />;
-  if (!analysis) return null;
+  if (!analysis) {
+    if (analyzeError) return <BriefingError onRetry={() => void analyze(true)} />;
+    return null;
+  }
 
   return <BriefingContent analysis={analysis} planId={planId} planTitle={planTitle} />;
 }
