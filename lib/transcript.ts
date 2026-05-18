@@ -150,6 +150,63 @@ function buildTranscript(
   return { meta: fullMeta, pages };
 }
 
+// ─── Upload-time builder ──────────────────────────────────────────────────────
+//
+// buildTranscriptFromExtractedPages() is called at upload time when page text
+// is already available (text PDFs via pdf-parse, images via OCR). No Claude
+// call is made — the extraction method records how the pages were obtained.
+
+export function buildTranscriptFromExtractedPages(
+  pageTexts: string[],
+  options: {
+    sourceType?: TranscriptMeta["sourceType"];
+    extractionMethod?: TranscriptExtractionMethod;
+    ocrSource?: boolean;
+  } = {},
+): RawTranscript {
+  const {
+    sourceType = "pdf",
+    extractionMethod = "pdfjs-per-page",
+    ocrSource = false,
+  } = options;
+
+  const startTime = Date.now();
+  const pages: TranscriptPage[] = pageTexts.map((pageText, i) => {
+    const pageNumber = i + 1;
+    return {
+      id: buildPageId(pageNumber),
+      pageNumber,
+      title: `Page ${pageNumber}`,
+      rawText: pageText,
+      content: pageText,
+      sections: [],
+      charCount: pageText.length,
+      empty: pageText.replace(/\s/g, "").length < 10,
+      lowConfidence: false,
+      malformed: false,
+      ocrSource,
+    };
+  });
+
+  return buildTranscript(
+    pages,
+    {
+      status: "completed" as TranscriptStatus,
+      sourceType,
+      extractionMethod,
+      generatedAt: Date.now(),
+      processingTimeMs: Date.now() - startTime,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+      estimatedCostUsd: 0,
+      failedReason: null,
+    },
+    { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  );
+}
+
 // ─── Public service function ───────────────────────────────────────────────────
 //
 // generateTranscriptForDocument() is the single entrypoint for transcript

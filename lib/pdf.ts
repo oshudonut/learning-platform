@@ -3,6 +3,7 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require("pdf-parse/lib/pdf-parse.js") as (
   buffer: Buffer,
+  options?: { pagerender?: (pageData: unknown) => Promise<string> },
 ) => Promise<{ text: string; numpages: number }>;
 
 import type { TextChunk } from "./types";
@@ -17,6 +18,51 @@ export async function extractPdfText(
   const truncated = text.length > MAX_CHARS;
   if (truncated) text = text.slice(0, MAX_CHARS);
   return { text, pages: parsed.numpages ?? 0, truncated };
+}
+
+/**
+ * Extract text page-by-page using pdf-parse's pagerender hook.
+ * Returns each page's raw text as a separate string in order.
+ * Stops accumulating pages once totalChars exceeds MAX_CHARS so very large
+ * PDFs don't blow memory; remaining pages are omitted from pageTexts but
+ * numpages still reflects the true PDF page count.
+ */
+export async function extractPdfPages(
+  buffer: Buffer,
+): Promise<{ pageTexts: string[]; numpages: number; text: string; truncated: boolean }> {
+  const pageTexts: string[] = [];
+  let totalChars = 0;
+  let truncated = false;
+
+  const parsed = await pdfParse(buffer, {
+    pagerender: async (pageData: unknown) => {
+      // Once we've exceeded the char budget, return empty but keep pdfjs
+      // moving through remaining pages so numpages is accurate.
+      if (truncated) return "";
+
+      const pd = pageData as { getTextContent: (opts: object) => Promise<{ items: Array<{ str: string; transform: number[] }> }> };
+      const textContent = await pd.getTextContent({ normalizeWhitespace: false });
+
+      let lastY: number | undefined;
+      let text = "";
+      for (const item of textContent.items) {
+        if (lastY === undefined || lastY === item.transform[5]) {
+          text += item.str;
+        } else {
+          text += "\n" + item.str;
+        }
+        lastY = item.transform[5];
+      }
+
+      pageTexts.push(text);
+      totalChars += text.length;
+      if (totalChars > MAX_CHARS) truncated = true;
+      return text;
+    },
+  });
+
+  const text = pageTexts.join("\n\n");
+  return { pageTexts, numpages: parsed.numpages ?? pageTexts.length, text, truncated };
 }
 
 // ---------------------------------------------------------------------------

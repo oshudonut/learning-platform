@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { extractPdfText, chunkText } from "@/lib/pdf";
+import { extractPdfPages, chunkText } from "@/lib/pdf";
+import { buildTranscriptFromExtractedPages } from "@/lib/transcript";
+import type { RawTranscript } from "@/lib/types";
 import { ocrPdfWithVision, MODEL } from "@/lib/claude";
 import { saveDocument, saveChunks, computeContentHash, getDocumentByContentHash } from "@/lib/store";
 import { randomId } from "@/lib/utils";
@@ -106,10 +108,11 @@ export async function POST(req: NextRequest) {
     let pages = 0;
     let ocrUsed = false;
     let truncated = false;
+    let transcriptForSave: RawTranscript | undefined;
 
     if (fileExt === ".pdf") {
-      const extracted = await extractPdfText(buffer);
-      pages = extracted.pages;
+      const extracted = await extractPdfPages(buffer);
+      pages = extracted.numpages;
       truncated = extracted.truncated;
 
       if (forceOcr || extracted.text.length < 200) {
@@ -117,6 +120,7 @@ export async function POST(req: NextRequest) {
         try {
           text = await ocrPdfWithVision(buffer.toString("base64"));
           ocrUsed = true;
+          // transcript left undefined — Claude boundary detection on demand via /api/transcript
         } catch (ocrErr) {
           console.error("[upload] Claude PDF OCR failed:", ocrErr);
           if (extracted.text.length < 200) {
@@ -129,6 +133,10 @@ export async function POST(req: NextRequest) {
         }
       } else {
         text = extracted.text;
+        transcriptForSave = buildTranscriptFromExtractedPages(extracted.pageTexts, {
+          sourceType: "pdf",
+          extractionMethod: "pdfjs-per-page",
+        });
       }
     } else if (fileExt === ".docx") {
       const result = await mammoth.extractRawText({ buffer });
@@ -136,11 +144,17 @@ export async function POST(req: NextRequest) {
       if (text.length < 50) {
         return NextResponse.json({ error: "Could not extract text from DOCX file." }, { status: 422 });
       }
+      // transcript left undefined for DOCX — Claude boundary detection on demand
     } else {
       const mimeType = fileExt === ".png" ? "image/png" : fileExt === ".webp" ? "image/webp" : "image/jpeg";
       try {
         text = await ocrImageWithVision(buffer, mimeType);
         ocrUsed = true;
+        transcriptForSave = buildTranscriptFromExtractedPages([text], {
+          sourceType: "image",
+          extractionMethod: "image-ocr",
+          ocrSource: true,
+        });
       } catch (ocrErr) {
         console.error("[upload] image OCR failed:", ocrErr);
         return NextResponse.json({ error: "Could not extract text from image." }, { status: 422 });
@@ -191,6 +205,7 @@ export async function POST(req: NextRequest) {
       createdAt: Date.now(),
       userId: user.id,
       folderId: folderId ?? null,
+      transcript: transcriptForSave,
     });
 
     await saveChunks(id, user.id, chunks);
