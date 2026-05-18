@@ -60,6 +60,9 @@ function toRow(doc: Document) {
     transcript_status: doc.transcriptStatus ?? "none",
     last_attempt_at: doc.lastAttemptAt ?? null,
     retry_count: doc.retryCount ?? 0,
+    storage_key: doc.storageKey ?? null,
+    last_error: doc.lastError ?? null,
+    processing_completed_at: doc.processingCompletedAt ?? null,
     reviewer: doc.reviewer ?? null,
     quiz: doc.quiz ?? null,
     flashcards: doc.flashcards ?? null,
@@ -84,6 +87,9 @@ function fromRow(row: Record<string, unknown>): Document {
     transcriptStatus: ((row.transcript_status as TranscriptProcessingStatus | null) ?? "none"),
     lastAttemptAt: (row.last_attempt_at as number | null) ?? null,
     retryCount: (row.retry_count as number | null) ?? 0,
+    storageKey: (row.storage_key as string | null) ?? null,
+    lastError: (row.last_error as string | null) ?? null,
+    processingCompletedAt: (row.processing_completed_at as number | null) ?? null,
     reviewer: (row.reviewer as Document["reviewer"]) ?? undefined,
     quiz: (row.quiz as Document["quiz"]) ?? undefined,
     flashcards: (row.flashcards as Document["flashcards"]) ?? undefined,
@@ -205,6 +211,68 @@ export async function updateTranscriptStatus(
     .eq("id", id)
     .eq("user_id", userId);
   if (error) throw new Error(`updateTranscriptStatus: ${error.message}`);
+}
+
+// Atomic job claim for the async transcript processor.
+// Only one concurrent worker wins the claim; duplicate triggers are safe.
+// Returns { claimed: true, storageKey } on success, or { claimed: false } when
+// the job is already owned / completed / failed.
+export async function claimTranscriptJob(
+  id: string,
+  userId: string,
+  staleAfterMs = 10 * 60 * 1000,
+): Promise<{ claimed: boolean; storageKey: string | null }> {
+  // Step 1 — read current state
+  const { data: row, error: readErr } = await supabase
+    .from("documents")
+    .select("transcript_status, last_attempt_at, storage_key")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (readErr) throw new Error(`claimTranscriptJob read: ${readErr.message}`);
+  if (!row) throw new Error(`claimTranscriptJob: document ${id} not found`);
+
+  const status = row.transcript_status as TranscriptProcessingStatus | null;
+  const lastAttemptAt = row.last_attempt_at as number | null;
+  const storageKey = row.storage_key as string | null;
+
+  // Already terminal — nothing to claim
+  if (status === "completed" || status === "failed") {
+    return { claimed: false, storageKey };
+  }
+
+  // Another worker is actively processing and hasn't gone stale
+  if (status === "processing") {
+    const now = Date.now();
+    if (lastAttemptAt !== null && now - lastAttemptAt < staleAfterMs) {
+      return { claimed: false, storageKey: null };
+    }
+    // Stale lock — reset to pending so the atomic claim below can re-acquire it
+    await supabase
+      .from("documents")
+      .update({ transcript_status: "pending" })
+      .eq("id", id)
+      .eq("user_id", userId)
+      .eq("transcript_status", "processing");
+  }
+
+  // Atomic claim: WHERE transcript_status IN ('pending', 'queued')
+  // Only one concurrent UPDATE wins; the losing request gets data=null.
+  const now = Date.now();
+  const { data, error: claimErr } = await supabase
+    .from("documents")
+    .update({ transcript_status: "processing", last_attempt_at: now })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .in("transcript_status", ["pending", "queued"])
+    .select("id, storage_key")
+    .maybeSingle();
+
+  if (claimErr) throw new Error(`claimTranscriptJob claim: ${claimErr.message}`);
+  if (!data) return { claimed: false, storageKey: null };
+
+  return { claimed: true, storageKey: (data as Record<string, unknown>).storage_key as string | null };
 }
 
 export async function deleteDocument(id: string, userId: string): Promise<void> {

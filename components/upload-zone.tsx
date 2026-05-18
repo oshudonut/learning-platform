@@ -156,8 +156,24 @@ export function UploadZone() {
           const err = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(err.error ?? `Upload failed (${res.status})`);
         }
-        const data = await res.json() as { id: string; title: string; duplicate?: boolean };
+        const data = await res.json() as {
+          id: string;
+          title: string;
+          duplicate?: boolean;
+          needsProcessing?: boolean;
+          transcriptStatus?: string;
+        };
         if (!firstDocId) { firstDocId = data.id; firstTitle = data.title; }
+
+        // Fire-and-forget — don't await. Starts OCR processing immediately after upload.
+        // Document page will also trigger this if upload-zone request is cancelled during navigation.
+        if (data.needsProcessing && data.id) {
+          fetch("/api/transcript/process", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ documentId: data.id }),
+          }).catch(() => null);
+        }
         setQueue((prev) =>
           prev.map((q) => (q.id === item.id ? { ...q, status: "done", docId: data.id } : q)),
         );

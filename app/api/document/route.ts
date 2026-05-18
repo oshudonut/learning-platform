@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
         transcriptStatus: meta.transcriptStatus ?? "none",
         transcriptPageCount: transcript?.meta?.pageCount ?? 0,
         transcriptVersion: transcript?.meta?.version ?? 1,
+        lastError: meta.lastError ?? null,
         conceptCount: reviewer?.topics?.length ?? 0,
         questionCount: quiz?.questions?.length ?? 0,
         flashcardCount: flashcards?.length ?? 0,

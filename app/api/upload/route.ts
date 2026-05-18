@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { extractPdfPages, chunkText } from "@/lib/pdf";
 import { buildTranscriptFromExtractedPages } from "@/lib/transcript";
 import type { RawTranscript } from "@/lib/types";
-import { ocrPdfWithVision, MODEL } from "@/lib/claude";
+import { MODEL } from "@/lib/claude";
 import { saveDocument, saveChunks, computeContentHash, getDocumentByContentHash } from "@/lib/store";
 import { randomId } from "@/lib/utils";
 import { createSupabaseServer } from "@/lib/supabase-server";
@@ -50,6 +50,8 @@ async function ocrImageWithVision(buffer: Buffer, mimeType: string): Promise<str
 }
 
 export async function POST(req: NextRequest) {
+  // resolvedKey tracks the storage file to clean up in finally.
+  // Set to undefined when the processor owns the file (OCR-deferred case).
   let resolvedKey: string | undefined;
   try {
     const supabase = createSupabaseServer();
@@ -108,6 +110,7 @@ export async function POST(req: NextRequest) {
     let pages = 0;
     let ocrUsed = false;
     let truncated = false;
+    let ocrDeferred = false;
     let transcriptForSave: RawTranscript | undefined;
 
     if (fileExt === ".pdf") {
@@ -116,21 +119,12 @@ export async function POST(req: NextRequest) {
       truncated = extracted.truncated;
 
       if (forceOcr || extracted.text.length < 200) {
-        console.info("[upload] using Claude OCR for PDF");
-        try {
-          text = await ocrPdfWithVision(buffer.toString("base64"));
-          ocrUsed = true;
-          // transcript left undefined — Claude boundary detection on demand via /api/transcript
-        } catch (ocrErr) {
-          console.error("[upload] Claude PDF OCR failed:", ocrErr);
-          if (extracted.text.length < 200) {
-            return NextResponse.json(
-              { error: "Could not extract text. Try re-scanning at higher resolution or provide a text-based PDF." },
-              { status: 422 },
-            );
-          }
-          text = extracted.text;
-        }
+        // OCR-deferred: skip the 60-300s Claude call here.
+        // The processor route (/api/transcript/process) will claim and run it async.
+        ocrDeferred = true;
+        text = "";
+        // Do NOT build transcript — processor does it after OCR
+        // Do NOT delete from storage — processor needs the file
       } else {
         text = extracted.text;
         transcriptForSave = buildTranscriptFromExtractedPages(extracted.pageTexts, {
@@ -146,6 +140,7 @@ export async function POST(req: NextRequest) {
       }
       // transcript left undefined for DOCX — Claude boundary detection on demand
     } else {
+      // Images: single page, fast with Haiku — keep inline
       const mimeType = fileExt === ".png" ? "image/png" : fileExt === ".webp" ? "image/webp" : "image/jpeg";
       try {
         text = await ocrImageWithVision(buffer, mimeType);
@@ -161,24 +156,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const storedText = text.length > TEXT_STORE_CAP ? text.slice(0, TEXT_STORE_CAP) : text;
-    const chunks = chunkText(text);
-
     const derivedTitle = filename
       .replace(/\.(pdf|docx|png|jpe?g|webp)$/i, "")
       .replace(/[-_]+/g, " ")
       .trim();
     const title = reviewerName ?? derivedTitle;
 
+    const id = randomId();
+
+    if (ocrDeferred) {
+      // Duplicate detection is skipped for OCR-deferred uploads because we have no text yet.
+      // The processor will set content_hash after OCR completes.
+
+      await saveDocument({
+        id,
+        title,
+        filename,
+        text: "",
+        textLength: 0,
+        contentHash: undefined,
+        createdAt: Date.now(),
+        userId: user.id,
+        folderId: folderId ?? null,
+        storageKey: resolvedKey,   // processor uses this to download the file
+        transcript: undefined,
+        transcriptStatus: "pending",
+        lastAttemptAt: null,
+        retryCount: 0,
+      });
+
+      // Save empty chunks so RAG tutor doesn't break before processor completes
+      await saveChunks(id, user.id, []);
+
+      // Transfer storage ownership to the processor — do NOT delete in finally
+      resolvedKey = undefined;
+
+      return NextResponse.json({
+        id,
+        title,
+        pages,
+        textLength: 0,
+        chunkCount: 0,
+        truncated: false,
+        ocrUsed: false,
+        needsProcessing: true,
+        transcriptStatus: "pending",
+      });
+    }
+
+    const storedText = text.length > TEXT_STORE_CAP ? text.slice(0, TEXT_STORE_CAP) : text;
+    const chunks = chunkText(text);
+
     // ── Duplicate detection ──────────────────────────────────────────────────
-    // Compute hash from stored text (same slice the reviewer will use) and check
-    // before inserting. This prevents the two-phase collision where a null-hash
-    // row is inserted, then a reviewer generation attempts to stamp a hash that
-    // already exists on another row for this user.
     const contentHash = computeContentHash(storedText);
     const existing = await getDocumentByContentHash(contentHash, user.id).catch(() => null);
     if (existing) {
-      // CASE 1: exact duplicate — return existing document, no new row created
       return NextResponse.json({
         id: existing.id,
         title: existing.title,
@@ -192,9 +224,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // CASE 4: genuine new upload — stamp hash at insert time so a future reviewer
-    // generation never needs to set it (and can never trigger the constraint).
-    const id = randomId();
     await saveDocument({
       id,
       title,
@@ -227,6 +256,7 @@ export async function POST(req: NextRequest) {
     console.error("[upload] error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
+    // Only clean up if resolvedKey is still set — OCR-deferred case sets it to undefined
     if (resolvedKey) {
       admin.storage.from(BUCKET).remove([resolvedKey]).catch(() => {});
     }

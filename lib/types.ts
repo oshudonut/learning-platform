@@ -516,8 +516,9 @@ export type RapidRecallReviewer = z.infer<typeof RapidRecallReviewerSchema>;
 // (transcript-internal quality flag) and from DocumentProgression.
 export type TranscriptProcessingStatus =
   | "none"        // transcript has never been attempted
+  | "pending"     // uploaded, waiting for a worker to claim it
   | "queued"      // enqueued for async generation (future)
-  | "processing"  // generation actively in progress (future async use)
+  | "processing"  // generation actively in progress
   | "completed"   // transcript exists and is usable
   | "failed";     // generation failed with no recoverable content
 
@@ -618,6 +619,9 @@ export type Document = {
   transcriptStatus?: TranscriptProcessingStatus; // document-level state machine; defaults to "none"
   lastAttemptAt?: number | null;     // epoch ms of last generation attempt; null if never attempted
   retryCount?: number;               // queue retry counter; managed by workers, not service functions
+  storageKey?: string | null;        // temp-uploads path; set for OCR-deferred uploads, cleared after processing
+  lastError?: string | null;         // error message from the most recent failed processing attempt
+  processingCompletedAt?: number | null; // epoch ms when status became completed or failed
   reviewer?: AnyReviewer;            // Layer 2 — derived transform; generated on user request
   quiz?: Quiz;
   flashcards?: Flashcard[];

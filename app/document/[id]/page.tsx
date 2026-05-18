@@ -55,6 +55,7 @@ type DocMeta = {
   transcriptStatus: string;
   transcriptPageCount: number;
   transcriptVersion: number;
+  lastError?: string | null;
 };
 
 type LoadState<T> = { status: "idle" | "loading" | "success" | "error"; data?: T; error?: string };
@@ -140,6 +141,8 @@ function DocumentPageInner() {
   const [highlights, setHighlights] = useState<ReviewerHighlight[]>([]);
   // reviewerKey increments on freshProgression — forces ReviewerView remount to clear stale localIdx
   const [reviewerKey, setReviewerKey] = useState(0);
+  // true while transcript_status is pending/queued/processing — drives the progress banner
+  const [transcriptProcessing, setTranscriptProcessing] = useState(false);
   // stored so the "Try Again" error-retry button can re-run the same preset
   const [pendingMethod, setPendingMethod] = useState<LearningMethod | null>(null);
   const [pendingMode, setPendingMode] = useState<StudyMode | null>(null);
@@ -215,6 +218,49 @@ function DocumentPageInner() {
 
   // Reset stale-dismissed flag whenever a new transformation becomes active
   useEffect(() => { setStaleDismissed(false); }, [transformationState.active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trigger async transcript processing + poll until completed/failed.
+  // Runs whenever transcriptStatus changes so re-triggers on retry.
+  useEffect(() => {
+    if (!doc) return;
+    const status = doc.transcriptStatus;
+
+    // Kick off processing if the job is unclaimed (handles page-load after upload-zone trigger)
+    if (status === "pending" || status === "queued") {
+      fetch("/api/transcript/process", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ documentId: id }),
+      }).catch(() => null);
+    }
+
+    // No polling needed for terminal/absent states
+    if (status !== "pending" && status !== "queued" && status !== "processing") return;
+
+    setTranscriptProcessing(true);
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/document?id=${id}`);
+        if (!res.ok) return;
+        const data = await res.json() as { document?: DocMeta };
+        if (!data.document) return;
+        const newStatus = data.document.transcriptStatus;
+
+        if (newStatus === "completed" || newStatus === "failed") {
+          setDoc(data.document);
+          setTranscriptProcessing(false);
+          clearInterval(interval);
+
+          // If completed and transcript is now available, re-fetch reviewer when on review tab
+          if (newStatus === "completed" && activeTab === "review" && !reviewer.data) {
+            void loadReviewer();
+          }
+        }
+      } catch { /* ignore transient poll errors */ }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [doc?.transcriptStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lazy-fetch transcript for source evidence panels. Fires once when doc confirms it has a transcript.
   // TranscriptWorkspace also fetches independently on the transcript tab — both are acceptable.
@@ -634,6 +680,40 @@ function DocumentPageInner() {
               ))}
             </div>
           </div>
+
+          {/* Transcript processing banners */}
+          {transcriptProcessing && (
+            <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
+              <Loader2 className="h-4 w-4 animate-spin text-primary flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Processing transcript</p>
+                <p className="text-xs text-muted-foreground">
+                  OCR extraction in progress — may take 1–3 minutes for large PDFs
+                </p>
+              </div>
+            </div>
+          )}
+          {!transcriptProcessing && doc.transcriptStatus === "failed" && (
+            <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
+              <p className="text-sm font-medium text-destructive">Transcript processing failed</p>
+              {doc.lastError && (
+                <p className="text-xs text-muted-foreground mt-0.5">{doc.lastError}</p>
+              )}
+              <button
+                className="mt-2 text-xs text-primary underline"
+                onClick={() => {
+                  fetch("/api/transcript/process", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ documentId: id }),
+                  }).catch(() => null);
+                  setDoc(d => d ? { ...d, transcriptStatus: "pending" } : d);
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* Tab Content */}
           <AnimatePresence mode="wait">
