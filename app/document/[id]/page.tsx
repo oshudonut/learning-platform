@@ -31,11 +31,14 @@ import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
 import { TutorChat } from "@/components/tutor/TutorChat";
 import { TranscriptWorkspace } from "@/components/transcript/TranscriptWorkspace";
 import { Button } from "@/components/ui/button";
-import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode, StudyPreset, StudyTransformation, RapidRecallReviewer } from "@/lib/types";
+import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode, StudyPreset, StudyTransformation, RapidRecallReviewer, RawTranscript } from "@/lib/types";
 import { STUDY_PRESETS } from "@/lib/types";
 import type { ReviewerHighlight } from "@/lib/store";
 import { cn, safeJson } from "@/lib/utils";
 import { PlannerStatusBanner } from "@/components/planner/PlannerStatusBanner";
+import { emitSignal, persistSignals } from "@/lib/signal-collector";
+import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import type { TopicMasterySnapshot } from "@/lib/mastery-engine";
 
 type Tab = "transcript" | "review" | "quiz" | "flashcards" | "tutor";
 
@@ -145,6 +148,14 @@ function DocumentPageInner() {
   const transformationState = useTransformationState(id, doc?.transcriptVersion);
   // local flag: user dismissed the stale banner for the current active transformation
   const [staleDismissed, setStaleDismissed] = useState(false);
+  // transcript for source evidence panels — fetched lazily once when doc.hasTranscript is known
+  const [transcript, setTranscript] = useState<RawTranscript | null>(null);
+  // requested page scroll target — set by SourceEvidencePanel navigation, consumed by TranscriptWorkspace
+  const [scrollToPageId, setScrollToPageId] = useState<string | null>(null);
+  // real Supabase auth UID — replaces "local" placeholder for signal persistence
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  // mastery snapshots hydrated from DB on load — available for tutor grounding and UI overlays
+  const [masterySnapshots, setMasterySnapshots] = useState<TopicMasterySnapshot[]>([]);
 
   // Load document metadata + progression
   useEffect(() => {
@@ -204,6 +215,90 @@ function DocumentPageInner() {
 
   // Reset stale-dismissed flag whenever a new transformation becomes active
   useEffect(() => { setStaleDismissed(false); }, [transformationState.active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lazy-fetch transcript for source evidence panels. Fires once when doc confirms it has a transcript.
+  // TranscriptWorkspace also fetches independently on the transcript tab — both are acceptable.
+  useEffect(() => {
+    if (!doc?.hasTranscript || transcript) return;
+    fetch("/api/transcript", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    })
+      .then((r) => r.json())
+      .then((data: { transcript?: RawTranscript }) => {
+        if (data.transcript) setTranscript(data.transcript);
+      })
+      .catch(() => null);
+  }, [doc?.hasTranscript, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch real auth UID once on mount — needed to stamp signals before persistence
+  useEffect(() => {
+    createSupabaseBrowser()
+      .auth.getUser()
+      .then(({ data }) => {
+        if (data.user?.id) setAuthUserId(data.user.id);
+      })
+      .catch(() => null);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hydrate mastery snapshots from DB after auth UID resolves
+  useEffect(() => {
+    if (!authUserId) return;
+    fetch(`/api/mastery?documentId=${id}`)
+      .then((r) => r.json())
+      .then((data: { snapshots?: TopicMasterySnapshot[] }) => {
+        if (Array.isArray(data.snapshots)) setMasterySnapshots(data.snapshots);
+      })
+      .catch(() => null);
+  }, [authUserId, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Signal flush system: beforeunload (keepalive) + 60s periodic interval
+  useEffect(() => {
+    if (!authUserId) return;
+
+    const handleUnload = () => { void persistSignals(authUserId); };
+    window.addEventListener("beforeunload", handleUnload);
+
+    const interval = setInterval(() => { void persistSignals(authUserId); }, 60_000);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      clearInterval(interval);
+    };
+  }, [authUserId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleNavigateToPage = useCallback((pageId: string) => {
+    setScrollToPageId(pageId);
+    setActiveTab("transcript");
+    emitSignal({
+      userId: "local",
+      documentId: id,
+      signalType: "transcript_navigation",
+      metadata: { targetPageId: pageId, triggeredBy: "source_panel" },
+    });
+  }, [id]);
+
+  const handleTopicViewed = useCallback((topicIndex: number, topicTitle: string, canonicalTopicId?: string) => {
+    emitSignal({
+      userId: "local",
+      documentId: id,
+      // Prefer canonical ID for stable longitudinal tracking; fall back to positional ID
+      topicId: canonicalTopicId ?? `topic_${topicIndex}`,
+      signalType: "topic_viewed",
+      metadata: { topicIndex, topicTitle, canonicalTopicId },
+    });
+  }, [id]);
+
+  const handleSourceOpened = useCallback((topicIndex: number, anchorCount: number, resolvedCount: number, canonicalTopicId?: string) => {
+    emitSignal({
+      userId: "local",
+      documentId: id,
+      topicId: canonicalTopicId ?? `topic_${topicIndex}`,
+      signalType: "source_opened",
+      metadata: { topicIndex, anchorCount, resolvedCount, canonicalTopicId },
+    });
+  }, [id]);
 
   const loadReviewer = useCallback(async (force = false, method?: LearningMethod, mode?: StudyMode) => {
     setReviewer({ status: "loading" });
@@ -556,6 +651,7 @@ function DocumentPageInner() {
                   hasReviewer={doc.hasReviewer}
                   onGenerateReviewer={handlePresetSelect}
                   onViewReviewer={() => setActiveTab("review")}
+                  scrollToPageId={scrollToPageId}
                 />
               )}
 
@@ -652,6 +748,10 @@ function DocumentPageInner() {
                             onHighlightDeleted={(hId) => setHighlights((prev) => prev.filter((h) => h.id !== hId))}
                             onSectionComplete={handleSectionComplete}
                             onStartFlashcards={handleStartFlashcards}
+                            transcript={transcript}
+                            onNavigateToPage={handleNavigateToPage}
+                            onTopicViewed={handleTopicViewed}
+                            onSourceOpened={handleSourceOpened}
                           />
                         </>
                       ) : null}

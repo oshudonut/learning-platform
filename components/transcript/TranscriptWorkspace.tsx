@@ -19,6 +19,7 @@ interface TranscriptWorkspaceProps {
   hasReviewer: boolean;
   onGenerateReviewer: (preset: StudyPreset) => Promise<void>;
   onViewReviewer: () => void;
+  scrollToPageId?: string | null;
 }
 
 export function TranscriptWorkspace({
@@ -26,10 +27,22 @@ export function TranscriptWorkspace({
   hasReviewer,
   onGenerateReviewer,
   onViewReviewer,
+  scrollToPageId,
 }: TranscriptWorkspaceProps) {
   const [fetchState, setFetchState] = useState<FetchState>({ status: "loading" });
   const [activePageNumber, setActivePageNumber] = useState(1);
   const [showModal, setShowModal] = useState(false);
+
+  // Navigate to the requested page when transcript is loaded and scrollToPageId is set.
+  // pageId format is "page_N" — parse the page number from that.
+  useEffect(() => {
+    if (!scrollToPageId || fetchState.status !== "success") return;
+    const match = scrollToPageId.match(/^page_(\d+)$/);
+    if (!match) return;
+    const pageNum = parseInt(match[1], 10);
+    const page = fetchState.transcript.pages.find((p) => p.pageNumber === pageNum);
+    if (page) setActivePageNumber(page.pageNumber);
+  }, [scrollToPageId, fetchState.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setFetchState({ status: "loading" });

@@ -111,6 +111,14 @@ export async function POST(req: NextRequest) {
       compressedText = compressDocumentForReview(doc.text);
     }
 
+    // Guard: document has no readable text (e.g. scanned PDF uploaded without OCR)
+    if (documentText.trim().length < 50) {
+      return NextResponse.json(
+        { error: "This document has no readable text. Delete it and re-upload with OCR enabled (the toggle on the upload card)." },
+        { status: 422 },
+      );
+    }
+
     const schema = SCHEMA_MAP[schemaType];
 
     const startTime = Date.now();

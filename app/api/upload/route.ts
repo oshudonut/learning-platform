@@ -12,7 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const TEXT_STORE_CAP = 60_000;
@@ -28,7 +28,7 @@ async function ocrImageWithVision(buffer: Buffer, mimeType: string): Promise<str
   const client = new Anthropic();
   const b64 = buffer.toString("base64");
   const response = await client.messages.create({
-    model: MODEL,
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 8000,
     messages: [
       {

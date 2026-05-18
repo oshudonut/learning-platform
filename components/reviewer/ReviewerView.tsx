@@ -25,7 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { AnyReviewer, Reviewer, ReviewerTopic, DocumentProgression, LearningMethod, StudyMode } from "@/lib/types";
+import type { AnyReviewer, Reviewer, ReviewerTopic, DocumentProgression, LearningMethod, StudyMode, RawTranscript } from "@/lib/types";
 import { METHOD_CONFIG, type MethodConfig } from "@/lib/learning-methods";
 import { ConceptualReviewerView } from "./views/ConceptualReviewerView";
 import { RetrievalReviewerView } from "./views/RetrievalReviewerView";
@@ -357,6 +357,10 @@ export function ReviewerView({
   onHighlightDeleted,
   onSectionComplete,
   onStartFlashcards,
+  transcript,
+  onNavigateToPage,
+  onTopicViewed,
+  onSourceOpened,
 }: {
   reviewer: AnyReviewer;
   progression?: DocumentProgression;
@@ -369,6 +373,10 @@ export function ReviewerView({
   onHighlightDeleted?: (id: string) => void;
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
+  transcript?: RawTranscript | null;
+  onNavigateToPage?: (pageId: string) => void;
+  onTopicViewed?: (topicIndex: number, topicTitle: string, canonicalTopicId?: string) => void;
+  onSourceOpened?: (topicIndex: number, anchorCount: number, resolvedCount: number, canonicalTopicId?: string) => void;
 }) {
   // Dispatch to methodology-specific viewers based on reviewer type
   if ("type" in reviewer) {
@@ -508,6 +516,10 @@ export function ReviewerView({
               highlights={highlights?.filter((h) => h.topicIndex === currentIdx)}
               onHighlightCreated={onHighlightCreated}
               onHighlightDeleted={onHighlightDeleted}
+              transcript={transcript}
+              onNavigateToPage={onNavigateToPage}
+              onTopicViewed={onTopicViewed}
+              onSourceOpened={onSourceOpened}
             />
 
             {/* Mark complete CTA */}

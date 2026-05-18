@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Lightbulb } from "lucide-react";
 import { AcademicBulletList } from "@/components/reviewer/primitives/AcademicBulletList";
 import { BoardTipStrip } from "@/components/reviewer/primitives/BoardTipStrip";
@@ -11,7 +11,8 @@ import { formatBoardText } from "@/components/reviewer/primitives/formatBoardTex
 import { HighlightableText } from "@/components/reviewer/primitives/HighlightableText";
 import { CompanionPanel, CompanionTriggerButton } from "@/components/reviewer/CompanionPanel";
 import type { CompanionTrigger } from "@/components/reviewer/CompanionPanel";
-import type { ReviewerTopic } from "@/lib/types";
+import { SourceEvidencePanel } from "@/components/reviewer/SourceEvidencePanel";
+import type { ReviewerTopic, RawTranscript } from "@/lib/types";
 import type { ReviewerHighlight } from "@/lib/store";
 
 interface BoardExamTopicRendererProps {
@@ -24,6 +25,12 @@ interface BoardExamTopicRendererProps {
   highlights?: ReviewerHighlight[];
   onHighlightCreated?: (h: ReviewerHighlight) => void;
   onHighlightDeleted?: (id: string) => void;
+  transcript?: RawTranscript | null;
+  onNavigateToPage?: (pageId: string) => void;
+  // ── Learning signal hooks (Phase 4) ──────────────────────────────────────
+  onTopicViewed?: (topicIndex: number, topicTitle: string, canonicalTopicId?: string) => void;
+  onSourceOpened?: (topicIndex: number, anchorCount: number, resolvedCount: number, canonicalTopicId?: string) => void;
+  onNoteConfusionUpdated?: (topicIndex: number, confusionLevel: number) => void;
 }
 
 const STOP_WORDS = new Set([
@@ -60,9 +67,21 @@ export function BoardExamTopicRenderer({
   highlights = [],
   onHighlightCreated,
   onHighlightDeleted,
+  transcript,
+  onNavigateToPage,
+  onTopicViewed,
+  onSourceOpened,
+  onNoteConfusionUpdated: _onNoteConfusionUpdated, // reserved — wired via WorkspacePanel in future step
 }: BoardExamTopicRendererProps) {
   const topicMnemonics = isLastSection ? [] : matchMnemonics(mnemonics, topic);
   const [companionOpen, setCompanionOpen] = useState<CompanionOpen>(null);
+
+  // Fire topic_viewed signal when this topic mounts (topic changed = new render)
+  useEffect(() => {
+    if (topicIndex !== undefined && onTopicViewed) {
+      onTopicViewed(topicIndex, topic.title, topic.canonicalTopicId);
+    }
+  }, [topicIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const companionTopic = {
     title: topic.title,
@@ -270,6 +289,20 @@ export function BoardExamTopicRenderer({
             />
           )}
         </div>
+      )}
+
+      {/* Source evidence — shown only when transcript available + topic has anchors */}
+      {transcript && (topic.sourceAnchors?.length ?? 0) > 0 && (
+        <SourceEvidencePanel
+          sourceAnchors={topic.sourceAnchors!}
+          transcript={transcript}
+          topicId={`topic-${topicIndex ?? 0}`}
+          onNavigateToPage={onNavigateToPage}
+          onOpen={onSourceOpened
+            ? (resolved, total) => onSourceOpened(topicIndex ?? 0, total, resolved, topic.canonicalTopicId)
+            : undefined
+          }
+        />
       )}
 
     </div>

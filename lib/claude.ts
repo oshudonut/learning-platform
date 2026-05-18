@@ -159,7 +159,9 @@ export async function streamTutorResponse({
  */
 export async function ocrPdfWithVision(pdfBase64: string): Promise<string> {
   // 16 000 output tokens ≈ 100 pages of dense extracted text.
+  // Use Haiku for OCR — text extraction doesn't need Sonnet reasoning and Haiku is 5x faster.
   const MAX_OUTPUT_TOKENS = 16_000;
+  const OCR_MODEL = "claude-haiku-4-5-20251001";
 
   const content: Anthropic.Messages.ContentBlockParam[] = [
     {
@@ -183,7 +185,7 @@ export async function ocrPdfWithVision(pdfBase64: string): Promise<string> {
   ];
 
   const response = await claude.messages.create({
-    model: MODEL,
+    model: OCR_MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
     messages: [{ role: "user", content }],
   });

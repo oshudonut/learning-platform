@@ -22,6 +22,12 @@ export const ConfusedWithSchema = z.object({
   distinction: z.string(),
 });
 
+// Phase 4: canonical identity fields — injected post-generation, not by Claude
+const topicIdentityFields = {
+  canonicalTopicId: z.string().optional(),  // "<slug>--<fingerprint8>"
+  topicFingerprint: z.string().optional(),  // 8-char hex hash
+};
+
 export const ReviewerTopicSchema = z.object({
   title: z.string(),
   coreIdea: z.string(),
@@ -32,6 +38,7 @@ export const ReviewerTopicSchema = z.object({
   boardTips: z.array(z.string()),
   quickRecall: z.array(z.string()),
   sourceAnchors: z.array(SourceAnchorSchema).optional(),
+  ...topicIdentityFields,
 });
 
 export const MnemonicSchema = z.object({
@@ -62,6 +69,7 @@ export const ConceptualTopicSchema = z.object({
   keyTakeaways: z.array(z.string()),
   selfCheck: z.array(z.string()),
   sourceAnchors: z.array(SourceAnchorSchema).optional(),
+  ...topicIdentityFields,
 });
 export const ConceptualReviewerSchema = z.object({
   type: z.literal("conceptual"),
@@ -86,6 +94,7 @@ export const RetrievalTopicSchema = z.object({
   keyFacts: z.array(z.string()),
   commonMistakes: z.array(z.string()),
   sourceAnchors: z.array(SourceAnchorSchema).optional(),
+  ...topicIdentityFields,
 });
 export const RetrievalReviewerSchema = z.object({
   type: z.literal("retrieval"),
@@ -115,6 +124,7 @@ export const MemoryTopicSchema = z.object({
   anchors: z.array(MemoryAnchorSchema),
   associations: z.array(MemoryAssociationSchema),
   sourceAnchors: z.array(SourceAnchorSchema).optional(),
+  ...topicIdentityFields,
 });
 export const MemoryReviewerSchema = z.object({
   type: z.literal("memory"),
@@ -140,6 +150,7 @@ export const RelationalTopicSchema = z.object({
   crossLinks: z.array(z.object({ from: z.string(), via: z.string(), to: z.string() })),
   contrastsWith: z.array(z.object({ topic: z.string(), keyDifference: z.string() })),
   sourceAnchors: z.array(SourceAnchorSchema).optional(),
+  ...topicIdentityFields,
 });
 export const RelationalReviewerSchema = z.object({
   type: z.literal("relational"),
@@ -199,6 +210,13 @@ export const QuizSchema = z.object({
 
 const difficulty = z.enum(["easy", "medium", "hard"]);
 
+// Phase 4: mastery metadata shared across all quiz question types
+const quizMasteryFields = {
+  sourceTopicId: z.string().optional(),
+  masteryWeight: z.number().optional(),
+  difficultyEstimate: z.number().optional(),
+};
+
 const MultipleChoiceQuestionSchema = z.object({
   type: z.literal("multiple_choice"),
   question: z.string(),
@@ -207,6 +225,7 @@ const MultipleChoiceQuestionSchema = z.object({
   explanation: z.string(),
   difficulty,
   topic: z.string(),
+  ...quizMasteryFields,
 });
 
 const TrueFalseQuestionSchema = z.object({
@@ -216,6 +235,7 @@ const TrueFalseQuestionSchema = z.object({
   explanation: z.string(),
   difficulty,
   topic: z.string(),
+  ...quizMasteryFields,
 });
 
 const IdentificationQuestionSchema = z.object({
@@ -226,6 +246,7 @@ const IdentificationQuestionSchema = z.object({
   explanation: z.string(),
   difficulty,
   topic: z.string(),
+  ...quizMasteryFields,
 });
 
 const FillInTheBlankQuestionSchema = z.object({
@@ -237,6 +258,7 @@ const FillInTheBlankQuestionSchema = z.object({
   explanation: z.string(),
   difficulty,
   topic: z.string(),
+  ...quizMasteryFields,
 });
 
 export const ExtendedQuizQuestionSchema = z.discriminatedUnion("type", [
@@ -262,6 +284,10 @@ export const FlashcardSchema = z.object({
   hint: z.string().optional(),
   difficulty: z.enum(["easy", "medium", "hard"]),
   topic: z.string(),
+  // Phase 4 mastery metadata — optional, not yet populated by generation pipeline
+  sourceTopicId: z.string().optional(),    // stable topic identifier for mastery tracking
+  masteryWeight: z.number().optional(),    // 0–1 relative importance for mastery scoring
+  difficultyEstimate: z.number().optional(), // 0–1 estimated difficulty beyond enum
 });
 
 export const FlashcardsSchema = z.object({
@@ -458,6 +484,7 @@ export const RapidRecallItemSchema = z.object({
 export const RapidRecallDrillSetSchema = z.object({
   topic: z.string(),
   items: z.array(RapidRecallItemSchema).min(3).max(15),
+  ...topicIdentityFields,
 });
 export const RapidRecallReviewerSchema = z.object({
   type: z.literal("rapid_recall"),

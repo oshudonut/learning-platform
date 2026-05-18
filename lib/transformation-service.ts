@@ -13,6 +13,7 @@ import {
   listTransformationHistory,
 } from "./store";
 import { randomId } from "./utils";
+import { injectTopicIdentity } from "./topic-identity";
 import type {
   Document,
   StudyTransformation,
@@ -232,6 +233,13 @@ export async function generateTransformation(
 
   const pageIndex = doc.transcript ? buildPageIndex(doc.transcript) : null;
 
+  // Guard: document has no readable text (e.g. scanned PDF uploaded without OCR)
+  if (documentText.trim().length < 50) {
+    throw new Error(
+      "This document has no readable text. Delete it and re-upload with OCR enabled (the toggle on the upload card).",
+    );
+  }
+
   // Get prompt config
   const { taskInstruction, systemPreamble, schemaType, maxTokens } = getPromptConfig(
     transformationType,
@@ -284,6 +292,13 @@ export async function generateTransformation(
     });
   }
 
+  // Inject stable canonical topic IDs into all topic/drillSet entries.
+  // Done post-Zod-parse so Claude never invents these values.
+  const contentWithIdentity = injectTopicIdentity(
+    parsed as StudyTransformation["content"],
+    doc.id,
+  );
+
   const transformation: StudyTransformation = {
     id: randomId(),
     documentId: doc.id,
@@ -303,7 +318,7 @@ export async function generateTransformation(
     estimatedCostUsd,
     sourceAnchors: anchors,
     metadata: { fromTranscript: Boolean(doc.transcript), anchorCount: anchors.length },
-    content: parsed as StudyTransformation["content"],
+    content: contentWithIdentity,
     supersededBy: null,
     createdAt: startTime,
   };
