@@ -27,6 +27,7 @@ import type {
   QuizQuestion,
   Folder,
   AnyReviewer,
+  RawTranscript,
   StudyPlan,
   StudyPlanDocument,
   StudyPlanItem,
@@ -49,6 +50,7 @@ function toRow(doc: Document) {
     created_at: doc.createdAt,
     user_id: doc.userId ?? null,
     folder_id: doc.folderId ?? null,
+    transcript: doc.transcript ?? null,
     reviewer: doc.reviewer ?? null,
     quiz: doc.quiz ?? null,
     flashcards: doc.flashcards ?? null,
@@ -68,6 +70,7 @@ function fromRow(row: Record<string, unknown>): Document {
     createdAt: row.created_at as number,
     userId: (row.user_id as string | null) ?? null,
     folderId: (row.folder_id as string | null) ?? null,
+    transcript: (row.transcript as RawTranscript | null) ?? undefined,
     reviewer: (row.reviewer as Document["reviewer"]) ?? undefined,
     quiz: (row.quiz as Document["quiz"]) ?? undefined,
     flashcards: (row.flashcards as Document["flashcards"]) ?? undefined,
@@ -146,6 +149,19 @@ export async function updateDocument(
   const updated = { ...existing, ...patch };
   await saveDocument(updated);
   return updated;
+}
+
+export async function updateTranscript(
+  id: string,
+  userId: string,
+  transcript: RawTranscript,
+): Promise<void> {
+  const { error } = await supabase
+    .from("documents")
+    .update({ transcript })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw new Error(`updateTranscript: ${error.message}`);
 }
 
 export async function deleteDocument(id: string, userId: string): Promise<void> {

@@ -423,6 +423,34 @@ export type ExtendedQuiz = {
   difficultyLevel: QuizDifficultyLevel;
 };
 
+// ─── Raw Transcript (Layer 0 — immutable source data) ────────────────────────
+//
+// Page-scoped verbatim extraction. One TranscriptPage per source page.
+// Never modified after creation. Reviewer is derived FROM this, never the reverse.
+//
+// sourceType values:
+//   "pdf"          — true per-page extraction via pdfjs pagerender callback
+//   "docx"         — heading-delimited sections (no physical page concept in DOCX)
+//   "image"        — single page from OCR vision extraction
+//   "reconstructed"— built from documents.text for pre-Phase-3 uploads where
+//                    the original file was already deleted; page boundaries are
+//                    synthetic text-block splits, not source file pages
+
+export type TranscriptPage = {
+  pageNumber: number;   // 1-indexed; for "docx": section number; for "reconstructed": block number
+  rawText: string;      // verbatim extracted text — no whitespace normalization
+  charCount: number;
+  isEmpty: boolean;     // true when <10 non-whitespace chars (cover pages, blanks)
+  ocrSource: boolean;   // true when this page was extracted via Claude vision OCR
+};
+
+export type RawTranscript = {
+  sourceType: "pdf" | "docx" | "image" | "reconstructed";
+  totalPages: number;
+  pages: TranscriptPage[];
+  extractedAt: number;  // unix ms
+};
+
 // ─── Document ─────────────────────────────────────────────────────────────────
 
 export type Document = {
@@ -436,7 +464,8 @@ export type Document = {
   userId?: string | null;
   folderId?: string | null;
   workspaceId?: string | null;
-  reviewer?: AnyReviewer;
+  transcript?: RawTranscript;  // Layer 0 — immutable verbatim source; absent on pre-Phase-3 docs
+  reviewer?: AnyReviewer;      // Layer 2 — derived transform; generated on user request
   quiz?: Quiz;
   flashcards?: Flashcard[];
   flashcardReviewStates?: FlashcardReviewState[];

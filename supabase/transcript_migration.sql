@@ -1,0 +1,27 @@
+-- Phase 1: Raw Transcript Layer
+--
+-- Adds a verbatim transcript column to the documents table.
+--
+-- IMPORTANT: Run this migration in the Supabase SQL Editor BEFORE deploying
+-- any code from Phase 1. The application code now includes `transcript` in
+-- every documents upsert via toRow(). If this column does not exist when the
+-- code is deployed, all document saves (upload, reviewer generation, etc.)
+-- will fail with a PostgREST column-not-found error.
+--
+-- This migration is purely additive:
+--   - No existing rows are modified.
+--   - No existing columns are altered or dropped.
+--   - All pre-Phase-3 documents will have transcript = NULL until a
+--     "Generate Source View" action is triggered by the user (Phase 3b).
+--
+-- Column semantics:
+--   transcript JSONB stores a RawTranscript object:
+--     { sourceType, totalPages, pages: TranscriptPage[], extractedAt }
+--   sourceType values:
+--     "pdf"           — true per-page extraction (new uploads after Phase 3)
+--     "docx"          — heading-delimited sections
+--     "image"         — single-page OCR result
+--     "reconstructed" — synthetic text-block split from documents.text
+--                       (used for pre-Phase-3 docs where original file is gone)
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS transcript jsonb;
