@@ -13,6 +13,8 @@ import {
   ReviewerAllDoneScreen,
   useProgressionState,
 } from "../shared";
+import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
+import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   feynman:      { label: "Feynman Technique", cls: "bg-violet-500/10 text-violet-400 border-violet-500/20" },
@@ -32,6 +34,8 @@ export function ConceptualReviewerView({
   progression,
   learningMethod,
   studyMode,
+  documentId,
+  notes,
   onSectionComplete,
   onStartFlashcards,
 }: {
@@ -39,6 +43,8 @@ export function ConceptualReviewerView({
   progression?: DocumentProgression;
   learningMethod?: LearningMethod | null;
   studyMode?: StudyMode | null;
+  documentId?: string;
+  notes?: Map<number, { noteText: string; confusionLevel: number | null }>;
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
 }) {
@@ -187,6 +193,22 @@ export function ConceptualReviewerView({
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">{reviewer.bigPicture}</p>
             </div>
+          )}
+
+          {documentId !== undefined && (
+            <ReviewerNotepad
+              documentId={documentId}
+              topicIndex={currentIdx}
+              initialNote={notes?.get(currentIdx) ?? null}
+              topic={{
+                title: topic.title,
+                coreIdea: topic.simplifiedExplanation,
+                keyPoints: topic.mechanism,
+                mustMemorize: topic.keyTakeaways,
+                boardTips: topic.selfCheck,
+              } satisfies NoteCoachTopic}
+              studyMode={studyMode ?? undefined}
+            />
           )}
 
           <MarkCompleteButton

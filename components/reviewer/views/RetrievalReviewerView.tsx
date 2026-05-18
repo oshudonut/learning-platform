@@ -16,6 +16,8 @@ import {
   ReviewerAllDoneScreen,
   useProgressionState,
 } from "../shared";
+import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
+import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   active_recall: { label: "Active Recall", cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
@@ -130,6 +132,8 @@ export function RetrievalReviewerView({
   progression,
   learningMethod,
   studyMode,
+  documentId,
+  notes,
   onSectionComplete,
   onStartFlashcards,
 }: {
@@ -137,6 +141,8 @@ export function RetrievalReviewerView({
   progression?: DocumentProgression;
   learningMethod?: LearningMethod | null;
   studyMode?: StudyMode | null;
+  documentId?: string;
+  notes?: Map<number, { noteText: string; confusionLevel: number | null }>;
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
 }) {
@@ -284,6 +290,22 @@ export function RetrievalReviewerView({
                 ))}
               </ul>
             </div>
+          )}
+
+          {documentId !== undefined && (
+            <ReviewerNotepad
+              documentId={documentId}
+              topicIndex={currentIdx}
+              initialNote={notes?.get(currentIdx) ?? null}
+              topic={{
+                title: topic.title,
+                coreIdea: topic.blurtPrompt,
+                keyPoints: topic.keyFacts,
+                mustMemorize: topic.questions.map((q) => q.q),
+                boardTips: topic.commonMistakes,
+              } satisfies NoteCoachTopic}
+              studyMode={studyMode ?? undefined}
+            />
           )}
 
           <MarkCompleteButton

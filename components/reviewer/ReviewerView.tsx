@@ -371,7 +371,7 @@ export function ReviewerView({
 }) {
   // Dispatch to methodology-specific viewers based on reviewer type
   if ("type" in reviewer) {
-    const sharedProps = { progression, learningMethod, studyMode, onSectionComplete, onStartFlashcards };
+    const sharedProps = { progression, learningMethod, studyMode, documentId, notes, onSectionComplete, onStartFlashcards };
     if (reviewer.type === "conceptual") {
       return <ConceptualReviewerView reviewer={reviewer} {...sharedProps} />;
     }

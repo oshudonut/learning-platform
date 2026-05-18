@@ -13,6 +13,8 @@ import {
   ReviewerAllDoneScreen,
   useProgressionState,
 } from "../shared";
+import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
+import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   mnemonic:         { label: "Mnemonics",        cls: "bg-pink-500/10 text-pink-400 border-pink-500/20" },
@@ -66,6 +68,8 @@ export function MemoryReviewerView({
   progression,
   learningMethod,
   studyMode,
+  documentId,
+  notes,
   onSectionComplete,
   onStartFlashcards,
 }: {
@@ -73,6 +77,8 @@ export function MemoryReviewerView({
   progression?: DocumentProgression;
   learningMethod?: LearningMethod | null;
   studyMode?: StudyMode | null;
+  documentId?: string;
+  notes?: Map<number, { noteText: string; confusionLevel: number | null }>;
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
 }) {
@@ -202,6 +208,22 @@ export function MemoryReviewerView({
                 ))}
               </div>
             </div>
+          )}
+
+          {documentId !== undefined && (
+            <ReviewerNotepad
+              documentId={documentId}
+              topicIndex={currentIdx}
+              initialNote={notes?.get(currentIdx) ?? null}
+              topic={{
+                title: topic.title,
+                coreIdea: topic.coreIdea,
+                keyPoints: topic.anchors.map((a) => a.fact),
+                mustMemorize: topic.anchors.filter((a) => a.priority === "HIGH").map((a) => a.fact),
+                boardTips: topic.associations.map((a) => `${a.concept}: ${a.trick}`),
+              } satisfies NoteCoachTopic}
+              studyMode={studyMode ?? undefined}
+            />
           )}
 
           <MarkCompleteButton

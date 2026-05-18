@@ -13,6 +13,8 @@ import {
   ReviewerAllDoneScreen,
   useProgressionState,
 } from "../shared";
+import { ReviewerNotepad } from "@/components/reviewer/ReviewerNotepad";
+import type { NoteCoachTopic } from "@/components/reviewer/NoteCoach";
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   mind_maps:    { label: "Mind Mapping",  cls: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" },
@@ -31,6 +33,8 @@ export function RelationalReviewerView({
   progression,
   learningMethod,
   studyMode,
+  documentId,
+  notes,
   onSectionComplete,
   onStartFlashcards,
 }: {
@@ -38,6 +42,8 @@ export function RelationalReviewerView({
   progression?: DocumentProgression;
   learningMethod?: LearningMethod | null;
   studyMode?: StudyMode | null;
+  documentId?: string;
+  notes?: Map<number, { noteText: string; confusionLevel: number | null }>;
   onSectionComplete?: (index: number) => void;
   onStartFlashcards?: () => void;
 }) {
@@ -210,6 +216,22 @@ export function RelationalReviewerView({
                 ))}
               </div>
             </div>
+          )}
+
+          {documentId !== undefined && (
+            <ReviewerNotepad
+              documentId={documentId}
+              topicIndex={currentIdx}
+              initialNote={notes?.get(currentIdx) ?? null}
+              topic={{
+                title: topic.title,
+                coreIdea: topic.centralConcept,
+                keyPoints: topic.nodes.map((n) => n.concept),
+                mustMemorize: topic.crossLinks.map((l) => `${l.from} → ${l.via} → ${l.to}`),
+                boardTips: topic.contrastsWith.map((c) => `vs ${c.topic}: ${c.keyDifference}`),
+              } satisfies NoteCoachTopic}
+              studyMode={studyMode ?? undefined}
+            />
           )}
 
           <MarkCompleteButton
