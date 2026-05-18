@@ -79,7 +79,9 @@ function fromRow(row: Record<string, unknown>): Document {
 }
 
 export async function saveDocument(doc: Document): Promise<void> {
-  const { error } = await supabase.from("documents").upsert(toRow(doc));
+  // Explicit onConflict: "id" so this never accidentally handles the
+  // (user_id, content_hash) constraint — that is the caller's responsibility.
+  const { error } = await supabase.from("documents").upsert(toRow(doc), { onConflict: "id" });
   if (error) throw new Error(`saveDocument: ${error.message}`);
 }
 
@@ -102,6 +104,9 @@ export async function copyDocumentForUser(sourceDocId: string, targetUserId: str
     id: randomId(),
     userId: targetUserId,
     createdAt: Date.now(),
+    // Don't carry the source hash: content_hash is scoped to (user_id, hash)
+    // so copying it would collide if targetUser uploads the same file later.
+    contentHash: undefined,
     flashcardReviewStates: undefined,
   };
   await saveDocument(copy);

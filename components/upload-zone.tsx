@@ -156,7 +156,7 @@ export function UploadZone() {
           const err = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(err.error ?? `Upload failed (${res.status})`);
         }
-        const data = await res.json() as { id: string; title: string };
+        const data = await res.json() as { id: string; title: string; duplicate?: boolean };
         if (!firstDocId) { firstDocId = data.id; firstTitle = data.title; }
         setQueue((prev) =>
           prev.map((q) => (q.id === item.id ? { ...q, status: "done", docId: data.id } : q)),

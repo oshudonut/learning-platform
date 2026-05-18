@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
 import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig } from "@/lib/prompts";
-import { getDocument, updateDocument, computeContentHash, getProgression, upsertProgression, markHighlightsStale } from "@/lib/store";
+import { getDocument, updateDocument, computeContentHash, getDocumentByContentHash, getProgression, upsertProgression, markHighlightsStale } from "@/lib/store";
 import { buildInitialProgression } from "@/lib/progression";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import {
@@ -87,8 +87,18 @@ export async function POST(req: NextRequest) {
       maxTokens: schemaType === "standard" ? 8000 : 12000,
     });
 
+    // Guard against legacy hash collision: docs uploaded before the fix may have
+    // content_hash = null. If another doc already carries this hash for this user,
+    // save the reviewer without stamping the hash to avoid the unique constraint.
+    // For docs uploaded after the fix the hash is already set at upload time and
+    // this check will find the same doc (id === existingByHash.id), so it's a no-op.
+    const existingByHash = await getDocumentByContentHash(incomingHash, user.id).catch(() => null);
+    const hashPatch = (!existingByHash || existingByHash.id === id)
+      ? { contentHash: incomingHash }
+      : {}; // another doc owns this hash — skip stamping to avoid violation
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await updateDocument(id, user.id, { reviewer: parsed as any, contentHash: incomingHash });
+    await updateDocument(id, user.id, { reviewer: parsed as any, ...hashPatch });
 
     // Reset learning cycle when regenerating with an explicit methodology.
     // Error-recovery retries (force=true, no learningMethod in request) are excluded —

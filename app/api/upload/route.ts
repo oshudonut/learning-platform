@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { extractPdfText, chunkText } from "@/lib/pdf";
 import { ocrPdfWithVision, MODEL } from "@/lib/claude";
-import { saveDocument, saveChunks } from "@/lib/store";
+import { saveDocument, saveChunks, computeContentHash, getDocumentByContentHash } from "@/lib/store";
 import { randomId } from "@/lib/utils";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { supabase as admin } from "@/lib/supabase";
@@ -149,7 +149,6 @@ export async function POST(req: NextRequest) {
 
     const storedText = text.length > TEXT_STORE_CAP ? text.slice(0, TEXT_STORE_CAP) : text;
     const chunks = chunkText(text);
-    const id = randomId();
 
     const derivedTitle = filename
       .replace(/\.(pdf|docx|png|jpe?g|webp)$/i, "")
@@ -157,12 +156,38 @@ export async function POST(req: NextRequest) {
       .trim();
     const title = reviewerName ?? derivedTitle;
 
+    // ── Duplicate detection ──────────────────────────────────────────────────
+    // Compute hash from stored text (same slice the reviewer will use) and check
+    // before inserting. This prevents the two-phase collision where a null-hash
+    // row is inserted, then a reviewer generation attempts to stamp a hash that
+    // already exists on another row for this user.
+    const contentHash = computeContentHash(storedText);
+    const existing = await getDocumentByContentHash(contentHash, user.id).catch(() => null);
+    if (existing) {
+      // CASE 1: exact duplicate — return existing document, no new row created
+      return NextResponse.json({
+        id: existing.id,
+        title: existing.title,
+        pages,
+        textLength: text.length,
+        chunkCount: 0,
+        truncated,
+        ocrUsed,
+        duplicate: true,
+        message: "This reviewer already exists",
+      });
+    }
+
+    // CASE 4: genuine new upload — stamp hash at insert time so a future reviewer
+    // generation never needs to set it (and can never trigger the constraint).
+    const id = randomId();
     await saveDocument({
       id,
       title,
       filename,
       text: storedText,
       textLength: text.length,
+      contentHash,
       createdAt: Date.now(),
       userId: user.id,
       folderId: folderId ?? null,
