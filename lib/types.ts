@@ -1,5 +1,20 @@
 import { z } from "zod";
 
+// ─── Source Anchors ───────────────────────────────────────────────────────────
+//
+// Placeholder — not yet populated by generation pipelines.
+// Prepared so reviewer schemas already accept the field when implementation ships.
+// Purpose: every reviewer insight will eventually link back to a transcript page/section,
+// enabling highlight anchoring, tutor citations, flashcard traceability, and audit.
+
+export const SourceAnchorSchema = z.object({
+  pageId: z.string(),              // e.g. "page_12"
+  sectionId: z.string().optional(), // e.g. "page_12_section_3"
+  quotedText: z.string().optional(), // short verbatim excerpt for display/verification
+});
+
+export type SourceAnchor = z.infer<typeof SourceAnchorSchema>;
+
 // ─── Reviewer (Board-Exam Optimized) ──────────────────────────────────────────
 
 export const ConfusedWithSchema = z.object({
@@ -16,6 +31,7 @@ export const ReviewerTopicSchema = z.object({
   confusedWith: z.array(ConfusedWithSchema).optional(),
   boardTips: z.array(z.string()),
   quickRecall: z.array(z.string()),
+  sourceAnchors: z.array(SourceAnchorSchema).optional(),
 });
 
 export const MnemonicSchema = z.object({
@@ -45,6 +61,7 @@ export const ConceptualTopicSchema = z.object({
   mechanism: z.array(z.string()),
   keyTakeaways: z.array(z.string()),
   selfCheck: z.array(z.string()),
+  sourceAnchors: z.array(SourceAnchorSchema).optional(),
 });
 export const ConceptualReviewerSchema = z.object({
   type: z.literal("conceptual"),
@@ -68,6 +85,7 @@ export const RetrievalTopicSchema = z.object({
   questions: z.array(RetrievalQuestionSchema),
   keyFacts: z.array(z.string()),
   commonMistakes: z.array(z.string()),
+  sourceAnchors: z.array(SourceAnchorSchema).optional(),
 });
 export const RetrievalReviewerSchema = z.object({
   type: z.literal("retrieval"),
@@ -96,6 +114,7 @@ export const MemoryTopicSchema = z.object({
   coreIdea: z.string(),
   anchors: z.array(MemoryAnchorSchema),
   associations: z.array(MemoryAssociationSchema),
+  sourceAnchors: z.array(SourceAnchorSchema).optional(),
 });
 export const MemoryReviewerSchema = z.object({
   type: z.literal("memory"),
@@ -120,6 +139,7 @@ export const RelationalTopicSchema = z.object({
   nodes: z.array(ConceptNodeSchema),
   crossLinks: z.array(z.object({ from: z.string(), via: z.string(), to: z.string() })),
   contrastsWith: z.array(z.object({ topic: z.string(), keyDifference: z.string() })),
+  sourceAnchors: z.array(SourceAnchorSchema).optional(),
 });
 export const RelationalReviewerSchema = z.object({
   type: z.literal("relational"),
@@ -428,7 +448,7 @@ export type ExtendedQuiz = {
 // Page-scoped verbatim extraction. One TranscriptPage per source page/section.
 // Never modified after creation. Reviewer is derived FROM this, never the reverse.
 //
-// sourceType values:
+// TranscriptMeta.sourceType values:
 //   "pdf"          — true per-page extraction via pdfjs pagerender callback (Phase 3)
 //   "docx"         — heading-delimited sections (no physical page concept in DOCX)
 //   "image"        — single page from OCR vision extraction
@@ -436,32 +456,74 @@ export type ExtendedQuiz = {
 //                    the original file was already deleted; section boundaries are
 //                    Claude-identified structural splits, not source file pages
 
+// ── Transcript status / extraction method enums ───────────────────────────────
+
+export type TranscriptStatus = "pending" | "processing" | "completed" | "failed";
+
+export type TranscriptExtractionMethod =
+  | "pdfjs-per-page"       // Phase 3: true per-page via pdfjs pagerender
+  | "claude-ocr-per-page"  // Phase 3: per-page Claude vision OCR
+  | "mammoth-sections"     // Phase 3: DOCX heading-delimited sections
+  | "image-ocr"            // Single image Claude vision OCR
+  | "claude-boundary"      // Phase 2: Claude identifies boundaries, server slices verbatim
+  | "single-page";         // Fallback: entire doc.text as one section
+
+// ── Transcript metadata ───────────────────────────────────────────────────────
+//
+// Stored alongside pages. Enables analytics, retries, billing, and debugging.
+// Cost fields are approximate and model-specific; label as estimates at callsites.
+
+export type TranscriptMeta = {
+  status: TranscriptStatus;
+  version: number;               // schema version; starts at 1; increment on re-extraction
+  sourceType: "pdf" | "docx" | "image" | "reconstructed";
+  extractionMethod: TranscriptExtractionMethod;
+  generatedAt: number;           // unix ms timestamp
+  processingTimeMs: number;      // wall-clock ms from start to DB write
+  pageCount: number;             // pages.length
+  tokenCount: number;            // inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens
+  inputTokens: number;           // uncached prompt tokens
+  cacheReadTokens: number;       // tokens served from Anthropic prompt cache
+  cacheWriteTokens: number;      // tokens written to Anthropic prompt cache
+  outputTokens: number;
+  estimatedCostUsd: number;      // approximate; based on Sonnet pricing at generation time
+  cached: boolean;               // true when Anthropic prompt cache was hit (cacheReadTokens > 0)
+  failedReason: string | null;
+};
+
+// ── Page and section types ────────────────────────────────────────────────────
+
 export type TranscriptSection = {
+  id: string;        // "page_{pageNumber}_section_{sectionIndex}" — 1-indexed, stable within version
   heading: string;   // exact heading text from source
   content: string;   // verbatim section body
   level: number;     // 1 = top-level, 2 = subsection, 3 = minor
 };
 
 export type TranscriptPage = {
-  pageNumber: number;  // 1-indexed; for "reconstructed": section number
-  title: string;       // exact heading from source, or "Section N" if absent
-  content: string;     // full verbatim text of this page/section — no modifications
+  id: string;              // "page_{pageNumber}" — stable within a transcript version
+  pageNumber: number;      // 1-indexed
+  title: string;           // exact heading from source, or "Section N" if absent
+  rawText: string;         // verbatim extraction — unmodified from source (OCR output, pdfjs text, etc.)
+  content: string;         // working content; identical to rawText in Phase 2;
+                           // may differ if OCR cleaning is applied in later phases
   sections: TranscriptSection[];
-  charCount: number;
-  isEmpty: boolean;    // true when <10 non-whitespace chars (cover pages, blanks)
-  ocrSource: boolean;  // true when extracted via Claude vision OCR
+  charCount: number;       // content.length at extraction time
+  // Quality flags — set at extraction; used for OCR scoring and UI warnings
+  empty: boolean;          // <10 non-whitespace chars (cover pages, blank scans)
+  lowConfidence: boolean;  // OCR quality may be unreliable (Phase 3+ OCR; false for reconstructed)
+  malformed: boolean;      // structural anomaly detected (Phase 3+ OCR; false for reconstructed)
+  ocrSource: boolean;      // true when extracted via Claude vision OCR
 };
 
 export type RawTranscript = {
-  sourceType: "pdf" | "docx" | "image" | "reconstructed";
-  totalPages: number;
+  meta: TranscriptMeta;
   pages: TranscriptPage[];
-  extractedAt: number;  // unix ms
 };
 
 // ─── Transcript boundary detection schemas (Claude output for reconstruction) ─
 //
-// Claude identifies section start positions only — it does NOT reproduce content.
+// Claude identifies section start positions only — never reproduces content.
 // The server slices doc.text at identified positions to build verbatim pages.
 
 export const TranscriptBoundarySchema = z.object({

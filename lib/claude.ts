@@ -74,6 +74,8 @@ export async function generateStructured<S extends z.ZodTypeAny>({
   model,
 }: GenerateOpts<S>): Promise<{
   parsed: z.infer<S>;
+  inputTokens: number;
+  outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
 }> {
@@ -116,6 +118,8 @@ export async function generateStructured<S extends z.ZodTypeAny>({
 
   return {
     parsed,
+    inputTokens: response.usage.input_tokens ?? 0,
+    outputTokens: response.usage.output_tokens ?? 0,
     cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
     cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
   };
