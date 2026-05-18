@@ -20,13 +20,16 @@ import {
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { ReviewerView } from "@/components/reviewer/ReviewerView";
-import { MethodSelection } from "@/components/reviewer/MethodSelection";
+import { StudyPresetPicker } from "@/components/transcript/StudyPresetPicker";
+import { RapidRecallView } from "@/components/document/RapidRecallView";
+import { TransformationHistory } from "@/components/document/TransformationHistory";
 import { QuizEngine } from "@/components/quiz/QuizEngine";
 import { FlashcardStudy } from "@/components/flashcard/FlashcardStudy";
 import { TutorChat } from "@/components/tutor/TutorChat";
 import { TranscriptWorkspace } from "@/components/transcript/TranscriptWorkspace";
 import { Button } from "@/components/ui/button";
-import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode } from "@/lib/types";
+import type { AnyReviewer, Flashcard, DocumentProgression, ExtendedQuizQuestion, QuizDifficultyLevel, LearningMethod, StudyMode, StudyPreset, StudyTransformation, RapidRecallReviewer } from "@/lib/types";
+import { STUDY_PRESETS } from "@/lib/types";
 import type { ReviewerHighlight } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { PlannerStatusBanner } from "@/components/planner/PlannerStatusBanner";
@@ -130,9 +133,12 @@ function DocumentPageInner() {
   const [highlights, setHighlights] = useState<ReviewerHighlight[]>([]);
   // reviewerKey increments on freshProgression — forces ReviewerView remount to clear stale localIdx
   const [reviewerKey, setReviewerKey] = useState(0);
-  // stored so the "Try Again" error-retry button can pass method/mode to the reviewer API
+  // stored so the "Try Again" error-retry button can re-run the same preset
   const [pendingMethod, setPendingMethod] = useState<LearningMethod | null>(null);
   const [pendingMode, setPendingMode] = useState<StudyMode | null>(null);
+  const [pendingPreset, setPendingPreset] = useState<StudyPreset | null>(null);
+  // tracks the most-recently generated/loaded study transformation
+  const [activeTransformation, setActiveTransformation] = useState<StudyTransformation | null>(null);
 
   // Load document metadata + progression
   useEffect(() => {
@@ -232,10 +238,8 @@ function DocumentPageInner() {
   }, [id, doc, progression]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMethodSelect = useCallback(async (method: LearningMethod, mode: StudyMode) => {
-    // Store method/mode so the error-retry "Try Again" path can pass them to the API
     setPendingMethod(method);
     setPendingMode(mode);
-    // Save profile to progression first, then generate reviewer
     await fetch("/api/progression", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -243,6 +247,8 @@ function DocumentPageInner() {
     }).catch(() => null);
     await loadReviewer(true, method, mode);
   }, [id, loadReviewer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // handlePresetSelect is defined after loadFlashcards (see below)
 
   const loadQuiz = useCallback(async (force = false) => {
     setQuiz({ status: "loading" });
@@ -292,6 +298,61 @@ function DocumentPageInner() {
     const data = await res.json();
     if (data.progression) setProgression(data.progression);
   }, [id]);
+
+  const handlePresetSelect = useCallback(async (preset: StudyPreset) => {
+    const config = STUDY_PRESETS.find((p) => p.preset === preset);
+    if (!config) return;
+    setPendingPreset(preset);
+
+    if (preset === "flashcards") {
+      setActiveTab("flashcards");
+      void loadFlashcards(true);
+      return;
+    }
+    if (preset === "quiz") {
+      setActiveTab("quiz");
+      return;
+    }
+    if (preset === "ai_tutor") {
+      setActiveTab("tutor");
+      return;
+    }
+
+    if (preset === "rapid_recall") {
+      setReviewer({ status: "loading" });
+      try {
+        const res = await fetch("/api/transformation", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            documentId: id,
+            transformationType: "rapid_recall",
+            learningMethod: config.learningMethod,
+            studyMode: config.studyMode,
+            force: true,
+          }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error as string);
+        setActiveTransformation(data.transformation as StudyTransformation);
+        // rapid_recall content is rendered directly from activeTransformation,
+        // not via ReviewerView; use "success" status with no data to show the tab
+        setReviewer({ status: "success" });
+        if (!doc?.hasReviewer) setDoc((d) => d && { ...d, hasReviewer: true });
+        setActiveTab("review");
+      } catch (err) {
+        setReviewer({ status: "error", error: (err as Error).message });
+      }
+      return;
+    }
+
+    // Reviewer-type presets: use existing loadReviewer (handles progression reset)
+    if (config.learningMethod && config.studyMode) {
+      setActiveTransformation(null);
+      await handleMethodSelect(config.learningMethod, config.studyMode);
+      setActiveTab("review");
+    }
+  }, [id, doc, handleMethodSelect, loadFlashcards]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Called when the reviewer's "complete" screen CTA is clicked — switches to
   // the flashcards tab and auto-loads cards if not already loaded.
@@ -468,7 +529,7 @@ function DocumentPageInner() {
                 <TranscriptWorkspace
                   documentId={id}
                   hasReviewer={doc.hasReviewer}
-                  onGenerateReviewer={handleMethodSelect}
+                  onGenerateReviewer={handlePresetSelect}
                   onViewReviewer={() => setActiveTab("review")}
                 />
               )}
@@ -477,7 +538,7 @@ function DocumentPageInner() {
               {activeTab === "review" && (
                 <div>
                   {reviewer.status === "idle" ? (
-                    <MethodSelection onGenerate={handleMethodSelect} />
+                    <StudyPresetPicker onSelect={handlePresetSelect} hasTranscript={doc.hasTranscript} />
                   ) : reviewer.status === "loading" ? (
                     <div className="flex flex-col items-center gap-4 py-16">
                       <Loader2 className="h-8 w-8 text-primary animate-spin" />
@@ -493,19 +554,26 @@ function DocumentPageInner() {
                         <p className="font-semibold text-foreground">Generation failed</p>
                         <p className="text-sm text-muted-foreground mt-1">{reviewer.error}</p>
                       </div>
-                      <Button variant="outline" onClick={() => loadReviewer(true, pendingMethod ?? undefined, pendingMode ?? undefined)}>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (pendingPreset) void handlePresetSelect(pendingPreset);
+                          else void loadReviewer(true, pendingMethod ?? undefined, pendingMode ?? undefined);
+                        }}
+                      >
                         <RefreshCw className="h-4 w-4" />Try Again
                       </Button>
                     </div>
-                  ) : reviewer.data ? (
-                    <div>
-                      <div className="flex justify-end mb-4">
+                  ) : reviewer.status === "success" ? (
+                    <div className="space-y-6">
+                      <div className="flex justify-end">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => {
                             if (confirm("Regenerating will reset your section progress. Continue?")) {
                               setReviewer({ status: "idle" });
+                              setActiveTransformation(null);
                               setProgression(null);
                               setRemediationActive(false);
                             }
@@ -515,25 +583,49 @@ function DocumentPageInner() {
                           <RefreshCw className="h-3.5 w-3.5" />Regenerate
                         </Button>
                       </div>
-                      {highlights.some((h) => h.isStale) && (
-                        <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                          <span className="font-semibold">Some highlights are stale</span>
-                          <span className="text-amber-600/80 dark:text-amber-500/80">— the reviewer was regenerated. Click stale highlights to remove them.</span>
-                        </div>
-                      )}
-                      <ReviewerView
-                        key={reviewerKey}
-                        reviewer={reviewer.data}
-                        progression={progression ?? undefined}
+
+                      {/* Rapid Recall view */}
+                      {activeTransformation?.transformationType === "rapid_recall" ? (
+                        <RapidRecallView
+                          data={activeTransformation.content as unknown as RapidRecallReviewer}
+                        />
+                      ) : reviewer.data ? (
+                        <>
+                          {highlights.some((h) => h.isStale) && (
+                            <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                              <span className="font-semibold">Some highlights are stale</span>
+                              <span className="text-amber-600/80 dark:text-amber-500/80">— the reviewer was regenerated. Click stale highlights to remove them.</span>
+                            </div>
+                          )}
+                          <ReviewerView
+                            key={reviewerKey}
+                            reviewer={reviewer.data}
+                            progression={progression ?? undefined}
+                            documentId={id}
+                            learningMethod={progression?.learningMethod}
+                            studyMode={progression?.studyMode}
+                            notes={notes}
+                            highlights={highlights}
+                            onHighlightCreated={(h) => setHighlights((prev) => [...prev, h])}
+                            onHighlightDeleted={(hId) => setHighlights((prev) => prev.filter((h) => h.id !== hId))}
+                            onSectionComplete={handleSectionComplete}
+                            onStartFlashcards={handleStartFlashcards}
+                          />
+                        </>
+                      ) : null}
+
+                      {/* Transformation history */}
+                      <TransformationHistory
                         documentId={id}
-                        learningMethod={progression?.learningMethod}
-                        studyMode={progression?.studyMode}
-                        notes={notes}
-                        highlights={highlights}
-                        onHighlightCreated={(h) => setHighlights((prev) => [...prev, h])}
-                        onHighlightDeleted={(hId) => setHighlights((prev) => prev.filter((h) => h.id !== hId))}
-                        onSectionComplete={handleSectionComplete}
-                        onStartFlashcards={handleStartFlashcards}
+                        activeTransformationId={activeTransformation?.id ?? null}
+                        onLoad={(t) => {
+                          setActiveTransformation(t);
+                          if (t.transformationType === "rapid_recall") {
+                            setReviewer({ status: "success" });
+                          } else {
+                            setReviewer({ status: "success", data: t.content as AnyReviewer });
+                          }
+                        }}
                       />
                     </div>
                   ) : null}

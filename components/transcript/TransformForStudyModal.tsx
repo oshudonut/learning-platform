@@ -2,16 +2,27 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
-import { MethodSelection } from "@/components/reviewer/MethodSelection";
-import type { LearningMethod, StudyMode } from "@/lib/types";
+import { StudyPresetPicker } from "./StudyPresetPicker";
+import type { StudyPreset } from "@/lib/types";
 
 interface TransformForStudyModalProps {
   open: boolean;
   onClose: () => void;
-  onGenerate: (method: LearningMethod, mode: StudyMode) => Promise<void>;
+  onGenerate: (preset: StudyPreset) => Promise<void>;
+  hasTranscript?: boolean;
 }
 
-export function TransformForStudyModal({ open, onClose, onGenerate }: TransformForStudyModalProps) {
+export function TransformForStudyModal({
+  open,
+  onClose,
+  onGenerate,
+  hasTranscript,
+}: TransformForStudyModalProps) {
+  async function handleSelect(preset: StudyPreset) {
+    await onGenerate(preset);
+    onClose();
+  }
+
   return (
     <AnimatePresence>
       {open && (
@@ -44,7 +55,7 @@ export function TransformForStudyModal({ open, onClose, onGenerate }: TransformF
             </button>
 
             <div className="px-6 pt-6 pb-6">
-              <MethodSelection onGenerate={onGenerate} />
+              <StudyPresetPicker onSelect={handleSelect} hasTranscript={hasTranscript} />
             </div>
           </motion.div>
         </motion.div>

@@ -33,6 +33,11 @@ import type {
   StudyPlanDocument,
   StudyPlanItem,
   ReviewScheduleEvent,
+  StudyTransformation,
+  StudyTransformationType,
+  LearningMethod,
+  StudyMode,
+  SourceAnchor,
 } from "./types";
 export { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
 import { rowToMatchRoom, rowToParticipant, rowToAnswer } from "./match-mappers";
@@ -318,6 +323,139 @@ export async function getChunks(docId: string, userId: string): Promise<TextChun
     .maybeSingle();
   if (error) throw new Error(`getChunks: ${error.message}`);
   return (data?.chunks as TextChunk[] | null) ?? [];
+}
+
+// ─── Study Transformations (Phase 5) ─────────────────────────────────────────
+
+function transformationFromRow(row: Record<string, unknown>): StudyTransformation {
+  return {
+    id: row.id as string,
+    documentId: row.document_id as string,
+    userId: row.user_id as string,
+    transcriptVersion: (row.transcript_version as number) ?? 1,
+    transformationType: row.transformation_type as StudyTransformationType,
+    learningMethod: (row.learning_method as LearningMethod | null) ?? null,
+    studyMode: (row.study_mode as StudyMode | null) ?? null,
+    schemaType: (row.schema_type as string | null) ?? null,
+    generatedAt: row.generated_at as number,
+    model: (row.model as string) ?? "",
+    generationTimeMs: (row.generation_time_ms as number) ?? 0,
+    inputTokens: (row.input_tokens as number) ?? 0,
+    outputTokens: (row.output_tokens as number) ?? 0,
+    cacheReadTokens: (row.cache_read_tokens as number) ?? 0,
+    cacheWriteTokens: (row.cache_write_tokens as number) ?? 0,
+    estimatedCostUsd: Number(row.estimated_cost_usd ?? 0),
+    sourceAnchors: (row.source_anchors as SourceAnchor[]) ?? [],
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    content: row.content as StudyTransformation["content"],
+    supersededBy: (row.superseded_by as string | null) ?? null,
+    createdAt: row.created_at as number,
+  };
+}
+
+export async function saveStudyTransformation(t: StudyTransformation): Promise<void> {
+  const { error } = await supabase.from("study_transformations").upsert(
+    {
+      id: t.id,
+      document_id: t.documentId,
+      user_id: t.userId,
+      transcript_version: t.transcriptVersion,
+      transformation_type: t.transformationType,
+      learning_method: t.learningMethod ?? null,
+      study_mode: t.studyMode ?? null,
+      schema_type: t.schemaType ?? null,
+      generated_at: t.generatedAt,
+      model: t.model,
+      generation_time_ms: t.generationTimeMs,
+      input_tokens: t.inputTokens,
+      output_tokens: t.outputTokens,
+      cache_read_tokens: t.cacheReadTokens,
+      cache_write_tokens: t.cacheWriteTokens,
+      estimated_cost_usd: t.estimatedCostUsd,
+      source_anchors: t.sourceAnchors,
+      metadata: t.metadata,
+      content: t.content,
+      superseded_by: t.supersededBy ?? null,
+      created_at: t.createdAt,
+    },
+    { onConflict: "id" },
+  );
+  if (error) throw new Error(`saveStudyTransformation: ${error.message}`);
+}
+
+export async function getCachedStudyTransformation(params: {
+  documentId: string;
+  userId: string;
+  transformationType: StudyTransformationType;
+  learningMethod: LearningMethod | null;
+  studyMode: StudyMode | null;
+  transcriptVersion: number;
+}): Promise<StudyTransformation | null> {
+  // Build query; Supabase JS v2 doesn't support dynamic .is()/.eq() branching on
+  // nullable columns cleanly, so we use a raw RPC-style filter via PostgREST.
+  // Strategy: fetch recent non-superseded rows of this type and filter in JS.
+  const { data, error } = await supabase
+    .from("study_transformations")
+    .select("*")
+    .eq("document_id", params.documentId)
+    .eq("user_id", params.userId)
+    .eq("transformation_type", params.transformationType)
+    .eq("transcript_version", params.transcriptVersion)
+    .is("superseded_by", null)
+    .order("generated_at", { ascending: false })
+    .limit(20);
+
+  if (error) throw new Error(`getCachedStudyTransformation: ${error.message}`);
+  if (!data || data.length === 0) return null;
+
+  const match = (data as Record<string, unknown>[]).find((row) => {
+    const rowMethod = (row.learning_method as string | null) ?? null;
+    const rowMode = (row.study_mode as string | null) ?? null;
+    return rowMethod === params.learningMethod && rowMode === params.studyMode;
+  });
+
+  return match ? transformationFromRow(match) : null;
+}
+
+export async function listTransformationHistory(
+  documentId: string,
+  userId: string,
+  limit = 20,
+): Promise<StudyTransformation[]> {
+  const { data, error } = await supabase
+    .from("study_transformations")
+    .select("*")
+    .eq("document_id", documentId)
+    .eq("user_id", userId)
+    .order("generated_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listTransformationHistory: ${error.message}`);
+  return (data ?? []).map((r) => transformationFromRow(r as Record<string, unknown>));
+}
+
+export async function markTransformationSuperseded(
+  id: string,
+  supersededById: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("study_transformations")
+    .update({ superseded_by: supersededById })
+    .eq("id", id);
+  if (error) throw new Error(`markTransformationSuperseded: ${error.message}`);
+}
+
+export async function countActiveTransformations(
+  documentId: string,
+  userId: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("study_transformations")
+    .select("id", { count: "exact", head: true })
+    .eq("document_id", documentId)
+    .eq("user_id", userId)
+    .is("superseded_by", null);
+  if (error) throw new Error(`countActiveTransformations: ${error.message}`);
+  return count ?? 0;
 }
 
 // ─── Conversations ────────────────────────────────────────────────────────────

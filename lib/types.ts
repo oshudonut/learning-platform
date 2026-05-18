@@ -158,6 +158,10 @@ export type AnyReviewer =
   | MemoryReviewer
   | RelationalReviewer;
 
+// RapidRecallReviewer is intentionally NOT in AnyReviewer — it has a different
+// structure (drillSets instead of topics) and is rendered by RapidRecallView,
+// not ReviewerView. Access it via StudyTransformation.content.
+
 export type ReviewerSchemaType = "standard" | "conceptual" | "retrieval" | "memory" | "relational";
 
 export const METHOD_SCHEMA_MAP: Record<LearningMethod, ReviewerSchemaType> = {
@@ -443,6 +447,28 @@ export type ExtendedQuiz = {
   difficultyLevel: QuizDifficultyLevel;
 };
 
+// ─── Rapid Recall — cram-mode drill schema (Phase 5) ─────────────────────────
+
+export const RapidRecallItemSchema = z.object({
+  cue: z.string(),
+  response: z.string(),
+  flag: z.enum(["MUST_KNOW", "HIGH_YIELD", "STANDARD"]),
+  sourceAnchors: z.array(SourceAnchorSchema).optional(),
+});
+export const RapidRecallDrillSetSchema = z.object({
+  topic: z.string(),
+  items: z.array(RapidRecallItemSchema).min(3).max(15),
+});
+export const RapidRecallReviewerSchema = z.object({
+  type: z.literal("rapid_recall"),
+  title: z.string(),
+  summary: z.string(),
+  drillSets: z.array(RapidRecallDrillSetSchema).min(2).max(8),
+});
+export type RapidRecallItem = z.infer<typeof RapidRecallItemSchema>;
+export type RapidRecallDrillSet = z.infer<typeof RapidRecallDrillSetSchema>;
+export type RapidRecallReviewer = z.infer<typeof RapidRecallReviewerSchema>;
+
 // ─── Raw Transcript (Layer 0 — immutable source data) ────────────────────────
 //
 // Page-scoped verbatim extraction. One TranscriptPage per source page/section.
@@ -570,6 +596,131 @@ export type Document = {
   flashcards?: Flashcard[];
   flashcardReviewStates?: FlashcardReviewState[];
   chunks?: TextChunk[];
+};
+
+// ─── Study Transformations (Phase 5) ─────────────────────────────────────────
+//
+// Each generated study artifact is a StudyTransformation row.
+// Stored in study_transformations table; NOT in documents JSONB columns.
+// Reviewer-type transforms are also mirrored to documents.reviewer for
+// backward compat with ReviewerView and DocumentProgression.
+
+export type StudyTransformationType =
+  | "reviewer"       // board-exam standard schema
+  | "rapid_recall"   // cram-mode drill sets (new schema)
+  | "conceptual"     // feynman/elaboration conceptual schema
+  | "active_recall"  // retrieval-heavy schema
+  | "flashcards"     // SM-2 flashcard deck (uses existing /api/flashcards)
+  | "quiz"           // MCQ extended quiz (uses existing /api/quiz)
+  | "tutor_prep";    // AI tutor context (future)
+
+export type StudyPreset =
+  | "board_exam_reviewer"
+  | "rapid_recall"
+  | "conceptual_understanding"
+  | "active_recall"
+  | "flashcards"
+  | "quiz"
+  | "ai_tutor";
+
+export type PresetConfig = {
+  preset: StudyPreset;
+  label: string;
+  description: string;
+  transformationType: StudyTransformationType;
+  learningMethod?: LearningMethod;
+  studyMode?: StudyMode;
+  estimatedMinutes: number;
+  comingSoon?: boolean;
+};
+
+export const STUDY_PRESETS: PresetConfig[] = [
+  {
+    preset: "board_exam_reviewer",
+    label: "Board Exam Reviewer",
+    description: "High-yield board reviewer with mnemonics, traps, and must-memorize facts",
+    transformationType: "reviewer",
+    learningMethod: "pomodoro",
+    studyMode: "board_exam",
+    estimatedMinutes: 2,
+  },
+  {
+    preset: "rapid_recall",
+    label: "Rapid Recall",
+    description: "Cram-mode cue → response drill sets for last-minute review",
+    transformationType: "rapid_recall",
+    learningMethod: "blurting",
+    studyMode: "cram",
+    estimatedMinutes: 1,
+  },
+  {
+    preset: "conceptual_understanding",
+    label: "Conceptual Understanding",
+    description: "Feynman-style explanations with analogies, mechanisms, and self-check questions",
+    transformationType: "conceptual",
+    learningMethod: "feynman",
+    studyMode: "conceptual",
+    estimatedMinutes: 2,
+  },
+  {
+    preset: "active_recall",
+    label: "Active Recall",
+    description: "Retrieval-heavy format with blurt prompts and self-test Q&A",
+    transformationType: "active_recall",
+    learningMethod: "active_recall",
+    studyMode: "mastery",
+    estimatedMinutes: 2,
+  },
+  {
+    preset: "flashcards",
+    label: "Flashcard Deck",
+    description: "SM-2 spaced repetition cards for long-term retention",
+    transformationType: "flashcards",
+    studyMode: "cram",
+    estimatedMinutes: 1,
+  },
+  {
+    preset: "quiz",
+    label: "Practice Quiz",
+    description: "Mixed-format quiz with explanations and difficulty scaling",
+    transformationType: "quiz",
+    studyMode: "mastery",
+    estimatedMinutes: 1,
+  },
+  {
+    preset: "ai_tutor",
+    label: "AI Tutor",
+    description: "Open-ended conversation with a context-aware AI tutor",
+    transformationType: "tutor_prep",
+    estimatedMinutes: 0,
+    comingSoon: false,
+  },
+];
+
+export type StudyTransformationContent = AnyReviewer | Flashcards | Quiz;
+
+export type StudyTransformation = {
+  id: string;
+  documentId: string;
+  userId: string;
+  transcriptVersion: number;
+  transformationType: StudyTransformationType;
+  learningMethod: LearningMethod | null;
+  studyMode: StudyMode | null;
+  schemaType: string | null;
+  generatedAt: number;
+  model: string;
+  generationTimeMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  estimatedCostUsd: number;
+  sourceAnchors: SourceAnchor[];
+  metadata: Record<string, unknown>;
+  content: StudyTransformationContent;
+  supersededBy: string | null;
+  createdAt: number;
 };
 
 // ─── Competitive / Social ─────────────────────────────────────────────────────

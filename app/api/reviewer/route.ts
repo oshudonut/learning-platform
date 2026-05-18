@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateStructured, compressDocumentForReview } from "@/lib/claude";
-import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig } from "@/lib/prompts";
-import { getDocument, updateDocument, computeContentHash, getDocumentByContentHash, getProgression, upsertProgression, markHighlightsStale } from "@/lib/store";
+import { REVIEWER_TASK, SYSTEM_PREAMBLE, getMethodologyConfig, buildAnchorInstruction } from "@/lib/prompts";
+import { getDocument, updateDocument, computeContentHash, getDocumentByContentHash, getProgression, upsertProgression, markHighlightsStale, saveStudyTransformation } from "@/lib/store";
 import { buildInitialProgression } from "@/lib/progression";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { buildTranscriptContext, buildPageIndex } from "@/lib/transformation-service";
+import { randomId } from "@/lib/utils";
 import {
   ReviewerSchema,
   ConceptualReviewerSchema,
@@ -12,6 +14,7 @@ import {
   RelationalReviewerSchema,
 } from "@/lib/types";
 import type { LearningMethod, StudyMode, ReviewerSchemaType, DocumentProgression } from "@/lib/types";
+import { MODEL } from "@/lib/claude";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -55,8 +58,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ reviewer: doc.reviewer, cached: true, cacheSource: "hash" });
     }
 
-    const compressed = compressDocumentForReview(doc.text);
-
     let resolvedMethod = learningMethod;
     let resolvedMode = studyMode;
     if (!resolvedMethod || !resolvedMode) {
@@ -76,16 +77,31 @@ export async function POST(req: NextRequest) {
       schemaType = config.schemaType;
     }
 
+    // Use transcript as source when available — derive reviewer from structured pages,
+    // not raw upload text. Falls back to doc.text for pre-Phase-3 documents.
+    let documentText: string;
+    let compressedText: string | undefined;
+    if (doc.transcript) {
+      documentText = buildTranscriptContext(doc.transcript);
+      const pageIndex = buildPageIndex(doc.transcript);
+      taskInstruction = taskInstruction + buildAnchorInstruction(pageIndex);
+    } else {
+      documentText = doc.text;
+      compressedText = compressDocumentForReview(doc.text);
+    }
+
     const schema = SCHEMA_MAP[schemaType];
 
-    const { parsed, cacheReadTokens, cacheWriteTokens } = await generateStructured({
+    const startTime = Date.now();
+    const { parsed, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } = await generateStructured({
       schema,
       systemPreamble,
-      documentText: doc.text,
-      compressedText: compressed,
+      documentText,
+      compressedText,
       taskInstruction,
       maxTokens: schemaType === "standard" ? 8000 : 12000,
     });
+    const generationTimeMs = Date.now() - startTime;
 
     // Guard against legacy hash collision: docs uploaded before the fix may have
     // content_hash = null. If another doc already carries this hash for this user,
@@ -99,6 +115,42 @@ export async function POST(req: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await updateDocument(id, user.id, { reviewer: parsed as any, ...hashPatch });
+
+    // Record in study_transformations for history/cost tracking (best-effort)
+    try {
+      const transcriptVersion = doc.transcript?.meta.version ?? 1;
+      const transformationType =
+        schemaType === "conceptual" ? "conceptual"
+        : schemaType === "retrieval" ? "active_recall"
+        : "reviewer";
+      await saveStudyTransformation({
+        id: randomId(),
+        documentId: id,
+        userId: user.id,
+        transcriptVersion,
+        transformationType,
+        learningMethod: resolvedMethod ?? null,
+        studyMode: resolvedMode ?? null,
+        schemaType,
+        generatedAt: startTime,
+        model: MODEL,
+        generationTimeMs,
+        inputTokens: inputTokens ?? 0,
+        outputTokens: outputTokens ?? 0,
+        cacheReadTokens,
+        cacheWriteTokens,
+        estimatedCostUsd:
+          ((inputTokens ?? 0) * 3 + (outputTokens ?? 0) * 15 + cacheReadTokens * 0.30 + cacheWriteTokens * 3.75)
+          / 1_000_000,
+        sourceAnchors: [],
+        metadata: { fromTranscript: Boolean(doc.transcript), viaLegacyRoute: true },
+        content: parsed as never,
+        supersededBy: null,
+        createdAt: startTime,
+      });
+    } catch {
+      // Non-fatal — transformation record is supplementary
+    }
 
     // Reset learning cycle when regenerating with an explicit methodology.
     // Error-recovery retries (force=true, no learningMethod in request) are excluded —
@@ -132,7 +184,7 @@ export async function POST(req: NextRequest) {
       schemaType,
       progressionReset,
       freshProgression,
-      usage: { cacheReadTokens, cacheWriteTokens },
+      usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens },
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

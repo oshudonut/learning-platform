@@ -7,7 +7,7 @@ import { TranscriptHeader } from "./TranscriptHeader";
 import { TranscriptPageBlock } from "./TranscriptPageBlock";
 import { TranscriptWorkspacePanel } from "./TranscriptWorkspacePanel";
 import { TransformForStudyModal } from "./TransformForStudyModal";
-import type { LearningMethod, RawTranscript, StudyMode } from "@/lib/types";
+import type { RawTranscript, StudyPreset } from "@/lib/types";
 
 type FetchState =
   | { status: "loading" }
@@ -17,7 +17,7 @@ type FetchState =
 interface TranscriptWorkspaceProps {
   documentId: string;
   hasReviewer: boolean;
-  onGenerateReviewer: (method: LearningMethod, mode: StudyMode) => Promise<void>;
+  onGenerateReviewer: (preset: StudyPreset) => Promise<void>;
   onViewReviewer: () => void;
 }
 
@@ -80,9 +80,8 @@ export function TranscriptWorkspace({
   const { transcript } = fetchState;
   const activePage = transcript.pages.find((p) => p.pageNumber === activePageNumber) ?? null;
 
-  async function handleGenerate(method: LearningMethod, mode: StudyMode) {
-    setShowModal(false);
-    await onGenerateReviewer(method, mode);
+  async function handleGenerate(preset: StudyPreset) {
+    await onGenerateReviewer(preset);
   }
 
   return (
@@ -148,6 +147,7 @@ export function TranscriptWorkspace({
         open={showModal}
         onClose={() => setShowModal(false)}
         onGenerate={handleGenerate}
+        hasTranscript
       />
     </>
   );

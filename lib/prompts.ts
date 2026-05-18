@@ -198,6 +198,56 @@ export function buildFlashcardTask(method?: LearningMethod): string {
   return `${instruction}\n\n${FLASHCARD_TASK_BASE}`;
 }
 
+// ─── Rapid Recall task (Phase 5 — cram-mode drill sets) ──────────────────────
+
+export const RAPID_RECALL_TASK = `Generate a cram-mode rapid-recall drill deck from the source material.
+
+Format: concise cue → response pairs grouped by topic.
+
+Return a JSON object with EXACTLY this structure:
+
+{
+  "type": "rapid_recall",
+  "title": "concise deck title",
+  "summary": "1 sentence — what this deck covers",
+  "drillSets": [
+    {
+      "topic": "2-4 word topic label",
+      "items": [
+        {
+          "cue": "short question or stimulus phrase (under 15 words)",
+          "response": "the single shortest correct answer (1-5 words preferred)",
+          "flag": "MUST_KNOW" | "HIGH_YIELD" | "STANDARD"
+        }
+      ]
+    }
+  ]
+}
+
+Flagging rules:
+- MUST_KNOW: classic signs, gold-standard tests, first-line drugs, life-or-death thresholds
+- HIGH_YIELD: frequently tested facts, named criteria, key distinguishers
+- STANDARD: supporting knowledge, context, non-critical detail
+
+Hard constraints:
+- 2–8 drillSets (group by major topic)
+- 3–15 items per drillSet
+- cue: question-style or fill-in-the-blank; NOT a sentence with the answer embedded
+- response: as short as possible; 1 word, a number, or a short phrase preferred
+- NO full sentences in cue or response
+- Use medical abbreviations where standard (HTN, DM, PE, MI, etc.)
+
+Use exactly these field names.`;
+
+// ─── Source anchor instruction (injected into task when transcript exists) ────
+
+export function buildAnchorInstruction(pageIndex: string): string {
+  return `\n\nPAGE INDEX (for sourceAnchors only — do NOT include full page content in your output):
+${pageIndex}
+
+For each topic's sourceAnchors field, include the pageId(s) from this index where you found the source material. Use the exact pageId string shown (e.g., "page_1"). Approximate mapping is acceptable.`;
+}
+
 // ─── AI Tutor system prompt ───────────────────────────────────────────────────
 
 export const TUTOR_SYSTEM = `You are an elite AI professor — a Harvard-level educator with the patience of the best tutor you've ever had. Your mission is to help students achieve genuine mastery, not just pass tests.
