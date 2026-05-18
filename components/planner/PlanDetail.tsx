@@ -20,6 +20,7 @@ import { DailyChecklist } from "./DailyChecklist";
 import { CalendarView } from "./CalendarView";
 import { PlannerAIChat } from "./PlannerAIChat";
 import { PlannerOptimizer } from "./PlannerOptimizer";
+import { ReadinessReport } from "./ReadinessReport";
 import { ITEM_TYPE_META } from "./itemTypeMeta";
 import type { StudyPlan, StudyPlanItem, StudyPlanDocument } from "@/lib/types";
 import type { DailyBrief } from "@/lib/planner";
@@ -34,7 +35,7 @@ type TodayData = {
   brief: DailyBrief;
 };
 
-const TAB_OPTIONS = ["Today", "Calendar", "Progress"] as const;
+const TAB_OPTIONS = ["Today", "Calendar", "Progress", "Readiness"] as const;
 type Tab = typeof TAB_OPTIONS[number];
 
 export function PlanDetail({ planId }: { planId: string }) {
@@ -349,6 +350,12 @@ export function PlanDetail({ planId }: { planId: string }) {
             <p className="text-2xl font-bold text-foreground">{plan.dailyHours}h</p>
             <p className="text-xs text-muted-foreground mt-0.5">per day</p>
           </div>
+        </motion.div>
+      )}
+
+      {tab === "Readiness" && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <ReadinessReport planId={planId} />
         </motion.div>
       )}
 
