@@ -162,7 +162,15 @@ export function ReviewerNotepad({ documentId, topicIndex, initialNote, topic, st
 
           {/* AI Study Coach — appears after debounce when note is substantial */}
           {topic && (
-            <NoteCoach noteText={noteText} topic={topic} studyMode={studyMode} />
+            <NoteCoach
+              noteText={noteText}
+              topic={topic}
+              studyMode={studyMode}
+              onApplyRewrite={(text) => {
+                setNoteText(text);
+                scheduleAutoSave(text, confusionLevel);
+              }}
+            />
           )}
         </div>
       )}

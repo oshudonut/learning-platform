@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   BookOpen,
+  Check,
   ChevronDown,
   ChevronUp,
+  ClipboardPaste,
   GraduationCap,
   Lightbulb,
   Loader2,
@@ -83,6 +85,7 @@ type NoteCoachProps = {
   noteText: string;
   topic: NoteCoachTopic;
   studyMode?: string;
+  onApplyRewrite?: (text: string) => void;
 };
 
 type CoachState =
@@ -97,9 +100,10 @@ const DEBOUNCE_MS = 1500;
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export function NoteCoach({ noteText, topic, studyMode }: NoteCoachProps) {
+export function NoteCoach({ noteText, topic, studyMode, onApplyRewrite }: NoteCoachProps) {
   const [state, setState] = useState<CoachState>({ status: "idle" });
   const [collapsed, setCollapsed] = useState(false);
+  const [applied, setApplied] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const isMounted = useRef(true);
@@ -257,13 +261,34 @@ export function NoteCoach({ noteText, topic, studyMode }: NoteCoachProps) {
           {activeSections.map(({ key, label, Icon, colorClass, bgClass }) => (
             <div key={key} className={cn("px-3 py-2.5 flex items-start gap-2.5", bgClass)}>
               <Icon className={cn("h-3.5 w-3.5 flex-shrink-0 mt-0.5", colorClass)} />
-              <div className="min-w-0 space-y-0.5">
+              <div className="min-w-0 flex-1 space-y-0.5">
                 <p className={cn("text-[10px] font-bold uppercase tracking-wider", colorClass)}>
                   {label}
                 </p>
                 <p className="text-xs text-foreground/80 leading-relaxed">
                   {state.result[key]}
                 </p>
+                {key === "suggestedRewrite" && onApplyRewrite && (
+                  <button
+                    onClick={() => {
+                      onApplyRewrite(state.result.suggestedRewrite!);
+                      setApplied(true);
+                      setTimeout(() => setApplied(false), 2000);
+                    }}
+                    className={cn(
+                      "mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border transition-all",
+                      applied
+                        ? "text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
+                        : "text-violet-600 dark:text-violet-400 border-violet-500/30 bg-violet-500/8 hover:bg-violet-500/15",
+                    )}
+                  >
+                    {applied ? (
+                      <><Check className="h-2.5 w-2.5" />Copied to notes</>
+                    ) : (
+                      <><ClipboardPaste className="h-2.5 w-2.5" />Copy to my notes</>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           ))}
